@@ -55,6 +55,73 @@ export function createWidgetDeck() {
       return saved ? JSON.parse(saved) : [];
     } catch { return []; }
   })();
+
+  // State: per-widget flex-grow weights so users can resize modules by dragging the
+  // handle between two adjacent modules. Persisted so sizing survives refresh.
+  const WEIGHTS_KEY = 'lo_command_widget_weights';
+  let widgetWeights = (() => {
+    try {
+      const saved = localStorage.getItem(WEIGHTS_KEY);
+      return saved ? JSON.parse(saved) : {};
+    } catch { return {}; }
+  })();
+  function persistWeights() {
+    try { localStorage.setItem(WEIGHTS_KEY, JSON.stringify(widgetWeights)); } catch {}
+  }
+
+  // Build a draggable divider that resizes the module above and below it. Dragging
+  // down grows the module above (and shrinks the one below); dragging up does the
+  // reverse. The two modules' combined weight stays constant, so others are untouched.
+  function createResizeHandle() {
+    const handle = document.createElement('div');
+    handle.className = 'widget-resize-handle group flex-shrink-0 h-3 flex items-center justify-center cursor-row-resize touch-none';
+    handle.innerHTML = `<div class="h-1 w-10 rounded-full bg-white/10 group-hover:bg-white/30 transition-colors"></div>`;
+
+    handle.addEventListener('pointerdown', (e) => {
+      const prev = handle.previousElementSibling;
+      const next = handle.nextElementSibling;
+      if (!prev || !next) return;
+      e.preventDefault();
+
+      const startY = e.clientY;
+      const hA = prev.getBoundingClientRect().height;
+      const hB = next.getBoundingClientRect().height;
+      const totalH = hA + hB;
+      const wA = parseFloat(prev.style.flexGrow) || 1;
+      const wB = parseFloat(next.style.flexGrow) || 1;
+      const totalW = wA + wB;
+      const idA = prev.dataset.widgetId;
+      const idB = next.dataset.widgetId;
+      const MIN = 64; // minimum pixel height per module
+
+      handle.setPointerCapture(e.pointerId);
+      handle.querySelector('div').classList.add('bg-gold/60');
+      document.body.style.cursor = 'row-resize';
+
+      const onMove = (ev) => {
+        let delta = ev.clientY - startY;
+        delta = Math.max(-(hA - MIN), Math.min(hB - MIN, delta));
+        const newWA = ((hA + delta) / totalH) * totalW;
+        const newWB = ((hB - delta) / totalH) * totalW;
+        prev.style.flexGrow = newWA;
+        next.style.flexGrow = newWB;
+        widgetWeights[idA] = newWA;
+        widgetWeights[idB] = newWB;
+      };
+      const onUp = () => {
+        handle.releasePointerCapture(e.pointerId);
+        handle.removeEventListener('pointermove', onMove);
+        handle.removeEventListener('pointerup', onUp);
+        handle.querySelector('div').classList.remove('bg-gold/60');
+        document.body.style.cursor = '';
+        persistWeights();
+      };
+      handle.addEventListener('pointermove', onMove);
+      handle.addEventListener('pointerup', onUp);
+    });
+
+    return handle;
+  }
   
   // State: Checklist elements
   let tasksData = [
@@ -248,16 +315,16 @@ export function createWidgetDeck() {
   // Base shell structure for the widget deck
   aside.innerHTML = `
     <!-- Right Pane Controls Header -->
-    <div class="px-4 py-5 border-b border-white/6 flex items-center justify-between z-10 select-none flex-shrink-0">
+    <div class="px-4 py-3.5 border-b border-white/6 flex items-center justify-between z-10 select-none flex-shrink-0">
         <div class="flex flex-col">
-            <span class="text-[0.72rem] font-bold text-softBlue2 uppercase tracking-[0.22em] opacity-70">Utility Deck</span>
-            <span class="mt-1 text-[1.05rem] font-semibold tracking-[-0.02em] text-white">Interactive Utility Deck</span>
+            <span class="text-[0.6rem] font-bold text-softBlue2 uppercase tracking-[0.2em] opacity-70">Utility Deck</span>
+            <span class="mt-0.5 text-[0.85rem] font-semibold tracking-[-0.02em] text-white">Interactive Utility Deck</span>
         </div>
 
         <!-- Add Button and Dropdown Anchor -->
         <div class="relative">
-            <button id="add-widget-btn" class="inline-flex h-11 items-center gap-2 rounded-xl border border-[#314c72] bg-white/[0.05] px-4 text-sm font-semibold text-white shadow-[inset_0_1px_0_rgba(255,255,255,0.05)] transition hover:border-[#4a698f] hover:bg-white/[0.08] focus:outline-none" title="Add Widget">
-                <i class="fa-solid fa-plus text-sm"></i>
+            <button id="add-widget-btn" class="inline-flex h-8 items-center gap-1.5 rounded-lg border border-[#314c72] bg-white/[0.05] px-3 text-xs font-semibold text-white shadow-[inset_0_1px_0_rgba(255,255,255,0.05)] transition hover:border-[#4a698f] hover:bg-white/[0.08] focus:outline-none" title="Add Widget">
+                <i class="fa-solid fa-plus text-[11px]"></i>
                 <span>Add Widget</span>
             </button>
 
@@ -274,7 +341,7 @@ export function createWidgetDeck() {
     </div>
 
     <!-- Widget Area (Handles dynamic proportional scaling and independent scroll) -->
-    <div id="widgets-container" class="flex-1 flex flex-col overflow-hidden px-4 py-4 gap-3 bg-transparent relative">
+    <div id="widgets-container" class="flex-1 flex flex-col overflow-hidden px-4 py-4 bg-transparent relative">
         <!-- Fallback view when no widgets exist -->
         <div id="empty-state" class="absolute inset-0 flex flex-col items-center justify-center p-6 text-center select-none">
             <div class="h-12 w-12 rounded-full border border-dashed border-steel/60 flex items-center justify-center mb-4 opacity-60">
@@ -322,16 +389,20 @@ export function createWidgetDeck() {
       emptyState.classList.add('hidden');
     }
 
-    // 2. Clear old widget wrappers
-    const oldWrappers = widgetsContainer.querySelectorAll('.widget-wrapper');
-    oldWrappers.forEach(w => w.remove());
+    // 2. Clear old widget wrappers and resize handles
+    widgetsContainer.querySelectorAll('.widget-wrapper, .widget-resize-handle').forEach(w => w.remove());
 
     // 3. Render current active widgets
-    activeWidgets.forEach(widgetId => {
+    activeWidgets.forEach((widgetId, index) => {
       const def = widgetDefinitions[widgetId];
       const element = document.createElement('div');
-      element.className = 'widget-wrapper flex-1 min-h-0 flex flex-col rounded-[1.35rem] border border-[#284262] bg-[linear-gradient(180deg,rgba(20,39,67,0.95)_0%,rgba(14,29,51,0.98)_100%)] p-3.5 shadow-[inset_0_1px_0_rgba(255,255,255,0.04),0_14px_28px_rgba(0,0,0,0.16)]';
-      
+      element.className = 'widget-wrapper min-h-0 flex flex-col rounded-[1.35rem] border border-[#284262] bg-[linear-gradient(180deg,rgba(20,39,67,0.95)_0%,rgba(14,29,51,0.98)_100%)] p-3.5 shadow-[inset_0_1px_0_rgba(255,255,255,0.04),0_14px_28px_rgba(0,0,0,0.16)]';
+      // Resizable flex sizing: grow weight is user-adjustable, basis 0 so weights map to proportions
+      element.dataset.widgetId = widgetId;
+      element.style.flexGrow = widgetWeights[widgetId] || 1;
+      element.style.flexShrink = '1';
+      element.style.flexBasis = '0%';
+
       element.innerHTML = `
         <!-- Compact Header -->
         <div class="flex items-center justify-between mb-3 flex-shrink-0 pb-2 border-b border-white/8 select-none">
@@ -370,6 +441,11 @@ export function createWidgetDeck() {
       });
 
       widgetsContainer.appendChild(element);
+
+      // Insert a drag handle between this module and the next one
+      if (index < activeWidgets.length - 1) {
+        widgetsContainer.appendChild(createResizeHandle());
+      }
     });
 
     // Helper to bind task check-offs and redraw the list inside tasks widget
@@ -392,11 +468,11 @@ export function createWidgetDeck() {
     const available = Object.keys(widgetDefinitions).filter(id => !activeWidgets.includes(id));
     if (available.length === 0) {
       addBtn.disabled = true;
-      addBtn.className = "inline-flex h-11 items-center gap-2 rounded-xl border border-white/6 bg-white/[0.03] px-4 text-sm font-semibold text-slate-500 cursor-not-allowed";
+      addBtn.className = "inline-flex h-8 items-center gap-1.5 rounded-lg border border-white/6 bg-white/[0.03] px-3 text-xs font-semibold text-slate-500 cursor-not-allowed";
       addBtn.title = "All items active";
     } else {
       addBtn.disabled = false;
-      addBtn.className = "inline-flex h-11 items-center gap-2 rounded-xl border border-[#314c72] bg-white/[0.05] px-4 text-sm font-semibold text-white shadow-[inset_0_1px_0_rgba(255,255,255,0.05)] transition hover:border-[#4a698f] hover:bg-white/[0.08] focus:outline-none";
+      addBtn.className = "inline-flex h-8 items-center gap-1.5 rounded-lg border border-[#314c72] bg-white/[0.05] px-3 text-xs font-semibold text-white shadow-[inset_0_1px_0_rgba(255,255,255,0.05)] transition hover:border-[#4a698f] hover:bg-white/[0.08] focus:outline-none";
       addBtn.title = "Add Module";
     }
 
@@ -424,6 +500,51 @@ export function createWidgetDeck() {
       dropdownOptionsList.appendChild(optBtn);
     });
   }
+
+  // ── Horizontal pane resize ────────────────────────────────────────────────
+  // Let users shrink the right pane. The current width (23rem) is the hard upper
+  // limit — it can't be stretched wider. The lower limit keeps content legible so
+  // users never need to resize the widgets themselves just to read them.
+  const DECK_WIDTH_KEY = 'lo_command_deck_width';
+  const DECK_MAX_W = 368; // 23rem — current size, the maximum
+  const DECK_MIN_W = 288; // 18rem — narrowest width that still shows info clearly
+  const clampDeckW = (w) => Math.max(DECK_MIN_W, Math.min(DECK_MAX_W, w));
+  let deckWidth = (() => {
+    try {
+      const v = parseFloat(localStorage.getItem(DECK_WIDTH_KEY));
+      return Number.isFinite(v) ? clampDeckW(v) : DECK_MAX_W;
+    } catch { return DECK_MAX_W; }
+  })();
+  aside.style.width = `${deckWidth}px`;
+
+  const widthHandle = document.createElement('div');
+  widthHandle.className = 'group absolute left-0 top-0 h-full w-1.5 -ml-0.5 z-20 cursor-col-resize flex items-center justify-center touch-none';
+  widthHandle.innerHTML = `<div class="h-10 w-1 rounded-full bg-white/10 group-hover:bg-gold/60 transition-colors"></div>`;
+  widthHandle.addEventListener('pointerdown', (e) => {
+    e.preventDefault();
+    const startX = e.clientX;
+    const startW = aside.getBoundingClientRect().width;
+    widthHandle.setPointerCapture(e.pointerId);
+    widthHandle.querySelector('div').classList.add('bg-gold/60');
+    document.body.style.cursor = 'col-resize';
+
+    const onMove = (ev) => {
+      // Pane is on the right, so dragging the left edge right shrinks it
+      deckWidth = clampDeckW(startW - (ev.clientX - startX));
+      aside.style.width = `${deckWidth}px`;
+    };
+    const onUp = () => {
+      widthHandle.releasePointerCapture(e.pointerId);
+      widthHandle.removeEventListener('pointermove', onMove);
+      widthHandle.removeEventListener('pointerup', onUp);
+      widthHandle.querySelector('div').classList.remove('bg-gold/60');
+      document.body.style.cursor = '';
+      try { localStorage.setItem(DECK_WIDTH_KEY, String(deckWidth)); } catch {}
+    };
+    widthHandle.addEventListener('pointermove', onMove);
+    widthHandle.addEventListener('pointerup', onUp);
+  });
+  aside.appendChild(widthHandle);
 
   // Draw initial state (empty)
   updateDeck();
