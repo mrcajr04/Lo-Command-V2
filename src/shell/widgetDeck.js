@@ -46,6 +46,7 @@ export function createWidgetDeck() {
   const aside = document.createElement('aside');
   aside.className = 'shell-widget-deck w-[23rem] bg-[linear-gradient(180deg,#13243f_0%,#0d1c33_100%)] border-l border-[#203756] flex flex-col relative flex-shrink-0 text-white select-none shadow-[inset_1px_0_0_rgba(255,255,255,0.03)]';
   const LINKS_KEY = 'lo_command_workspace_links';
+  const responsiveWidgetSyncers = new Set();
 
   // State: active widgets — persisted to localStorage so state survives tab switches and page refreshes
   const DECK_KEY = 'lo_command_widget_active';
@@ -67,6 +68,10 @@ export function createWidgetDeck() {
   })();
   function persistWeights() {
     try { localStorage.setItem(WEIGHTS_KEY, JSON.stringify(widgetWeights)); } catch {}
+  }
+
+  function refreshResponsiveWidgets() {
+    responsiveWidgetSyncers.forEach((sync) => sync());
   }
 
   // Build a draggable divider that resizes the module above and below it. Dragging
@@ -107,6 +112,7 @@ export function createWidgetDeck() {
         next.style.flexGrow = newWB;
         widgetWeights[idA] = newWA;
         widgetWeights[idB] = newWB;
+        refreshResponsiveWidgets();
       };
       const onUp = () => {
         handle.releasePointerCapture(e.pointerId);
@@ -122,6 +128,84 @@ export function createWidgetDeck() {
 
     return handle;
   }
+
+  function bindQuickActionsLayout(widgetElement) {
+    const host = widgetElement.querySelector('[data-quick-actions-host]') || widgetElement;
+    const grid = widgetElement.querySelector('[data-quick-actions-grid]');
+    const buttons = [...widgetElement.querySelectorAll('[data-quick-action]')];
+    if (!grid || buttons.length === 0) return;
+
+    const applyDensity = (density) => {
+      grid.style.gap = density === 'compact' ? '0.375rem' : density === 'tight' ? '0.5rem' : '0.625rem';
+
+      buttons.forEach((button) => {
+        const iconWrap = button.querySelector('[data-quick-action-icon]');
+        const label = button.querySelector('[data-quick-action-label]');
+        const meta = button.querySelector('[data-quick-action-meta]');
+
+        if (density === 'compact') {
+          button.style.minHeight = '44px';
+          button.style.gap = '0.375rem';
+          button.style.padding = '0.5rem';
+          button.style.borderRadius = '0.75rem';
+          iconWrap.style.width = '1.75rem';
+          iconWrap.style.height = '1.75rem';
+          iconWrap.style.borderRadius = '0.6rem';
+          label.style.fontSize = '9px';
+          label.style.lineHeight = '1.1';
+          label.style.letterSpacing = '0.12em';
+          meta.style.fontSize = '9px';
+          meta.style.lineHeight = '1.1';
+        } else if (density === 'tight') {
+          button.style.minHeight = '50px';
+          button.style.gap = '0.5rem';
+          button.style.padding = '0.625rem';
+          button.style.borderRadius = '1rem';
+          iconWrap.style.width = '2rem';
+          iconWrap.style.height = '2rem';
+          iconWrap.style.borderRadius = '0.75rem';
+          label.style.fontSize = '10px';
+          label.style.lineHeight = '1.15';
+          label.style.letterSpacing = '0.13em';
+          meta.style.fontSize = '9px';
+          meta.style.lineHeight = '1.15';
+        } else {
+          button.style.minHeight = '56px';
+          button.style.gap = '0.5rem';
+          button.style.padding = '0.75rem';
+          button.style.borderRadius = '1rem';
+          iconWrap.style.width = '2.25rem';
+          iconWrap.style.height = '2.25rem';
+          iconWrap.style.borderRadius = '0.75rem';
+          label.style.fontSize = '11px';
+          label.style.lineHeight = '1.2';
+          label.style.letterSpacing = '0.14em';
+          meta.style.fontSize = '10px';
+          meta.style.lineHeight = '1.2';
+        }
+      });
+    };
+
+    const syncDensity = () => {
+      const { width, height } = host.getBoundingClientRect();
+      const density = height < 190 || width < 255 ? 'compact' : height < 240 || width < 290 ? 'tight' : 'full';
+      applyDensity(density);
+    };
+
+    syncDensity();
+    requestAnimationFrame(syncDensity);
+    responsiveWidgetSyncers.add(syncDensity);
+
+    if (typeof ResizeObserver !== 'undefined') {
+      const observer = new ResizeObserver(() => {
+        syncDensity();
+      });
+      observer.observe(host);
+      widgetElement._quickActionsObserver = observer;
+    }
+
+    widgetElement._quickActionsSync = syncDensity;
+  }
   
   // State: Checklist elements
   let tasksData = [
@@ -130,6 +214,7 @@ export function createWidgetDeck() {
     { id: 3, text: 'Approve rate lock extension request', completed: false },
     { id: 4, text: 'Dispatch disclosure packet - #903', completed: false }
   ];
+  let stickyNoteDraft = '';
 
   function normalizeUrl(value) {
     const trimmed = String(value || '').trim();
@@ -284,6 +369,69 @@ export function createWidgetDeck() {
         `;
       }
     },
+    stickyNote: {
+      id: 'stickyNote',
+      title: 'Quick Sticky Note',
+      iconClass: 'fa-solid fa-note-sticky text-gold text-xs mr-1.5',
+      render: () => {
+        return `
+          <div class="flex h-full flex-col gap-3 py-1">
+            <p class="text-[10px] leading-4 text-slate-400">
+              Temporary notes only. This won’t be saved.
+            </p>
+            <div class="flex-1 rounded-[1.75rem] border border-[#e0c86d] bg-[linear-gradient(180deg,#fff8bf_0%,#f7e48a_100%)] p-3 shadow-[inset_0_1px_0_rgba(255,255,255,0.65),0_14px_28px_rgba(0,0,0,0.12)]">
+              <textarea
+                data-sticky-note-input
+                placeholder="Jot down a quick phone number, task, or reminder..."
+                class="h-full min-h-[190px] w-full resize-none rounded-[1.1rem] border border-[#e5cf7d] bg-[#fff7b2]/90 px-4 py-3.5 text-[13px] leading-6 text-[#5b4a16] placeholder:text-[#9b884e] focus:border-[#cba638] focus:outline-none"
+              >${stickyNoteDraft}</textarea>
+            </div>
+          </div>
+        `;
+      }
+    },
+    quickActions: {
+      id: 'quickActions',
+      title: 'Quick Actions',
+      iconClass: 'fa-solid fa-bolt text-gold text-xs mr-1.5',
+      render: () => {
+        const actions = [
+          { id: 'add-link', label: 'Add Link', icon: 'fa-solid fa-link', tone: 'active' },
+          { id: 'add-contact', label: 'Add Contact', icon: 'fa-solid fa-user-plus', tone: 'active' },
+          { id: 'add-task', label: 'Add Task', icon: 'fa-solid fa-square-check', tone: 'placeholder' },
+          { id: 'add-loan', label: 'Add Loan', icon: 'fa-solid fa-sack-dollar', tone: 'placeholder' },
+        ];
+
+        return `
+          <div data-quick-actions-host class="py-1 h-full">
+            <div data-quick-actions-grid class="grid h-full grid-cols-2 gap-2.5 auto-rows-fr">
+              ${actions.map((action) => `
+                <button
+                  type="button"
+                  data-quick-action="${action.id}"
+                  ${action.tone === 'placeholder' ? 'disabled' : ''}
+                  class="inline-flex h-full min-h-[56px] items-center gap-2 rounded-2xl border px-3 py-3 text-left transition focus:outline-none ${
+                    action.tone === 'active'
+                      ? 'border-[#34527c] bg-white/[0.05] text-white hover:border-[#4a698f] hover:bg-white/[0.08]'
+                      : 'cursor-not-allowed border-white/8 bg-white/[0.03] text-slate-500'
+                  }"
+                >
+                  <span data-quick-action-icon class="flex h-9 w-9 items-center justify-center rounded-xl ${
+                    action.tone === 'active' ? 'bg-gold/12 text-gold' : 'bg-white/[0.04] text-slate-500'
+                  }">
+                    <i class="${action.icon} text-sm"></i>
+                  </span>
+                  <span class="min-w-0">
+                    <span data-quick-action-label class="block text-[11px] font-bold uppercase tracking-[0.14em]">${action.label}</span>
+                    <span data-quick-action-meta class="mt-0.5 block text-[10px] ${action.tone === 'active' ? 'text-slate-400' : 'text-slate-500'}">${action.tone === 'active' ? 'Open now' : 'Placeholder'}</span>
+                  </span>
+                </button>
+              `).join('')}
+            </div>
+          </div>
+        `;
+      }
+    },
     rates: {
       id: 'rates',
       title: 'Market Interest Rates',
@@ -390,6 +538,14 @@ export function createWidgetDeck() {
     }
 
     // 2. Clear old widget wrappers and resize handles
+    widgetsContainer.querySelectorAll('.widget-wrapper').forEach((widget) => {
+      if (widget._quickActionsObserver) {
+        widget._quickActionsObserver.disconnect();
+      }
+      if (widget._quickActionsSync) {
+        responsiveWidgetSyncers.delete(widget._quickActionsSync);
+      }
+    });
     widgetsContainer.querySelectorAll('.widget-wrapper, .widget-resize-handle').forEach(w => w.remove());
 
     // 3. Render current active widgets
@@ -435,6 +591,23 @@ export function createWidgetDeck() {
         bindTaskListeners(contentArea, def);
       }
 
+      if (widgetId === 'stickyNote') {
+        const noteInput = element.querySelector('[data-sticky-note-input]');
+        noteInput?.addEventListener('input', (event) => {
+          stickyNoteDraft = event.target.value;
+        });
+      }
+
+      if (widgetId === 'quickActions') {
+        element.querySelectorAll('[data-quick-action]').forEach((button) => {
+          button.addEventListener('click', () => {
+            const action = button.getAttribute('data-quick-action');
+            window.dispatchEvent(new CustomEvent('deck-quick-action', { detail: { action } }));
+          });
+        });
+        bindQuickActionsLayout(element);
+      }
+
       // Apply favicons for link widgets
       element.querySelectorAll('[data-favicon-url]').forEach(img => {
         applyFaviconToImg(img, img.dataset.linkId, img.dataset.faviconUrl, img.dataset.altFaviconDomain || '');
@@ -447,6 +620,8 @@ export function createWidgetDeck() {
         widgetsContainer.appendChild(createResizeHandle());
       }
     });
+
+    refreshResponsiveWidgets();
 
     // Helper to bind task check-offs and redraw the list inside tasks widget
     function bindTaskListeners(contentArea, def) {

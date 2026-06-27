@@ -1,6 +1,6 @@
 import {
   loadContacts, saveContacts, initializeIfEmpty,
-  exportToJSON, importFromJSON, migrateContacts
+  exportToJSON, importFromJSON, importFromOutlookCSV, importFromGoogleCSV, migrateContacts
 } from './storage.js';
 import {
   getAvatarPalette, getInitials, renderContactCard,
@@ -14,6 +14,9 @@ export function createContactsModule(onBack) {
   let contacts = [];
   let activeFilter = 'all';
   let searchQuery = '';
+  let hideServiceNumbers = false;
+  let importCandidates = []; // { contact, isDuplicate, dupReason, selected }
+  let pendingCsvSource = 'outlook'; // which CSV parser to use for the next file pick
   let sortMode = 'alpha-asc';
   let viewMode = 'grid';
   let contentMode = 'directory';
@@ -80,11 +83,25 @@ export function createContactsModule(onBack) {
           <i data-lucide="download" class="w-4 h-4"></i>
           <span>Export</span>
         </button>
-        <label class="flex items-center space-x-1.5 px-3 py-2 text-xs font-semibold text-steel hover:text-gold hover:bg-softBlue1 rounded-lg border border-transparent transition-all cursor-pointer flex-shrink-0">
-          <i data-lucide="upload" class="w-4 h-4"></i>
-          <span>Import</span>
+        <div class="relative flex-shrink-0">
+          <button id="ct-import-btn" type="button" class="flex items-center space-x-1.5 px-3 py-2 text-xs font-semibold text-steel hover:text-gold hover:bg-softBlue1 rounded-lg border border-transparent transition-all focus:outline-none">
+            <i data-lucide="upload" class="w-4 h-4"></i>
+            <span>Import</span>
+            <i data-lucide="chevron-down" class="w-3 h-3"></i>
+          </button>
+          <div id="ct-import-menu" class="hidden absolute right-0 mt-1.5 w-52 bg-white border border-softBlue2 rounded-xl shadow-lg z-30 overflow-hidden">
+            <button type="button" data-import-type="json" class="w-full text-left px-3.5 py-2.5 text-xs font-semibold text-navy hover:bg-softBlue1 transition-colors flex items-center gap-2.5 focus:outline-none">
+              <i data-lucide="file-text" class="w-4 h-4 text-steel flex-shrink-0"></i>
+              <span>JSON Backup</span>
+            </button>
+            <button type="button" data-import-type="contacts-csv" class="w-full text-left px-3.5 py-2.5 text-xs font-semibold text-navy hover:bg-softBlue1 transition-colors flex items-center gap-2.5 border-t border-softBlue1 focus:outline-none">
+              <i data-lucide="users" class="w-4 h-4 text-steel flex-shrink-0"></i>
+              <span>Google / Outlook Contacts CSV</span>
+            </button>
+          </div>
           <input id="ct-import-input" type="file" accept=".json" class="hidden">
-        </label>
+          <input id="ct-import-csv-input" type="file" accept=".csv,text/csv" class="hidden">
+        </div>
       </div>
     </div>
 
@@ -354,6 +371,44 @@ export function createContactsModule(onBack) {
       </div>
     </div>
   </div>
+
+  <!-- IMPORT PREVIEW MODAL -->
+  <div id="ct-import-backdrop" class="fixed inset-0 bg-navy/60 backdrop-blur-sm flex items-center justify-center p-4 z-50 hidden transition-all duration-300 opacity-0">
+    <div class="bg-white rounded-2xl shadow-2xl max-w-2xl w-full overflow-hidden border border-softBlue2 transform scale-95 transition-all duration-300 flex flex-col max-h-[90vh]">
+      <div class="p-5 border-b border-softBlue1 bg-lightGray flex items-start justify-between flex-shrink-0">
+        <div class="flex items-center space-x-2.5">
+          <div class="w-9 h-9 rounded-lg bg-softBlue2 text-navy flex items-center justify-center flex-shrink-0">
+            <i data-lucide="user-check" class="w-5 h-5"></i>
+          </div>
+          <div>
+            <h3 class="text-lg font-bold text-navy leading-tight">Review Import</h3>
+            <p id="ct-import-summary" class="text-xs text-steel mt-0.5"></p>
+          </div>
+        </div>
+        <button id="ct-import-close" class="text-steel hover:text-navy hover:bg-softBlue1 p-1.5 rounded-lg transition-colors focus:outline-none">
+          <i data-lucide="x" class="w-5 h-5"></i>
+        </button>
+      </div>
+
+      <div class="px-5 py-2.5 border-b border-softBlue1 flex items-center justify-between flex-shrink-0 text-xs">
+        <div class="flex items-center gap-2">
+          <button id="ct-import-select-all" class="px-2.5 py-1 rounded-md font-semibold text-steel hover:bg-softBlue1 transition focus:outline-none">Select all</button>
+          <span class="text-softBlue2">|</span>
+          <button id="ct-import-select-none" class="px-2.5 py-1 rounded-md font-semibold text-steel hover:bg-softBlue1 transition focus:outline-none">Select none</button>
+          <span class="text-softBlue2">|</span>
+          <button id="ct-import-skip-dupes" class="px-2.5 py-1 rounded-md font-semibold text-steel hover:bg-softBlue1 transition focus:outline-none">Skip duplicates</button>
+        </div>
+      </div>
+
+      <div id="ct-import-list" class="overflow-y-auto flex-grow custom-scrollbar p-3 space-y-1.5"></div>
+
+      <div class="p-4 border-t border-softBlue1 bg-lightGray flex items-center justify-between flex-shrink-0">
+        <button type="button" id="ct-import-cancel" class="px-4 py-2 text-sm font-semibold text-steel hover:text-navy transition-colors focus:outline-none">Cancel</button>
+        <button type="button" id="ct-import-confirm" class="px-5 py-2 text-sm font-bold text-white bg-navy hover:bg-steel active:scale-[0.98] rounded-lg border-2 border-transparent hover:border-gold transition-all duration-150 focus:outline-none">Import Selected</button>
+      </div>
+    </div>
+  </div>
+
   `;
 
   // ─── DOM REFS ─────────────────────────────────────────────────────────────
@@ -366,6 +421,14 @@ export function createContactsModule(onBack) {
   const addBtn            = container.querySelector('#ct-add-btn');
   const exportBtn         = container.querySelector('#ct-export-btn');
   const importInput       = container.querySelector('#ct-import-input');
+  const importCsvInput    = container.querySelector('#ct-import-csv-input');
+  const importBtn         = container.querySelector('#ct-import-btn');
+  const importMenu        = container.querySelector('#ct-import-menu');
+  const importBackdrop    = container.querySelector('#ct-import-backdrop');
+  const importInner       = importBackdrop.querySelector('div');
+  const importSummary     = container.querySelector('#ct-import-summary');
+  const importList        = container.querySelector('#ct-import-list');
+  const importConfirmBtn  = container.querySelector('#ct-import-confirm');
 
   const filterPillsDiv    = container.querySelector('#ct-filter-pills');
   const contactsContainer = container.querySelector('#ct-contacts-container');
@@ -417,11 +480,22 @@ export function createContactsModule(onBack) {
   }
 
   // ─── DATA ─────────────────────────────────────────────────────────────────
+  // Short codes (119, 156), starred/hash codes (*123), and other ≤6-digit lines are
+  // utility / service numbers rather than real people.
+  function isServiceNumber(phone) {
+    const raw = String(phone || '');
+    if (/[*#]/.test(raw)) return true;
+    const digits = raw.replace(/\D/g, '');
+    return digits.length > 0 && digits.length <= 6;
+  }
+
   function getFiltered() {
     let list = contacts.slice();
     if (activeFilter === 'starred')  list = list.filter(c => c.favorite);
     else if (activeFilter === 'personal') list = list.filter(c => c.category === 'personal');
     else if (activeFilter === 'business') list = list.filter(c => c.category === 'business');
+
+    if (hideServiceNumbers) list = list.filter(c => !isServiceNumber(c.phone));
 
     if (searchQuery.trim()) {
       const q = searchQuery.toLowerCase();
@@ -461,9 +535,9 @@ export function createContactsModule(onBack) {
       { key: 'starred',  label: 'Starred',  icon: 'star',      count: starredCount },
     ];
 
-    filterPillsDiv.innerHTML = defs.map(p => {
+    const base = 'flex items-center gap-1.5 px-4 py-1.5 rounded-full text-xs font-bold border-2 transition-all focus:outline-none';
+    const categoryHTML = defs.map(p => {
       const isActive = activeFilter === p.key;
-      const base = 'flex items-center gap-1.5 px-4 py-1.5 rounded-full text-xs font-bold border-2 transition-all focus:outline-none';
       const cls  = isActive
         ? `${base} bg-navy text-white border-navy shadow-sm`
         : `${base} bg-white text-steel border-softBlue2 hover:border-steel hover:text-navy`;
@@ -475,6 +549,21 @@ export function createContactsModule(onBack) {
         <span>${p.label} (${p.count})</span>
       </button>`;
     }).join('');
+
+    // Toggle to hide utility / service numbers — only shown when any exist
+    const serviceCount = contacts.filter(c => isServiceNumber(c.phone)).length;
+    const toggleCls = hideServiceNumbers
+      ? `${base} bg-amber text-white border-amber shadow-sm`
+      : `${base} bg-white text-steel border-softBlue2 hover:border-amber hover:text-amber`;
+    const toggleHTML = serviceCount > 0
+      ? `<span class="self-center mx-1 h-5 w-px bg-softBlue2"></span>
+         <button data-toggle="service" class="${toggleCls}" title="Hide short utility / service numbers (e.g. 119, *123)">
+           <i data-lucide="phone-off" class="w-3.5 h-3.5"></i>
+           <span>Hide Service #s (${serviceCount})</span>
+         </button>`
+      : '';
+
+    filterPillsDiv.innerHTML = categoryHTML + toggleHTML;
     if (window.lucide) window.lucide.createIcons();
   }
 
@@ -1005,6 +1094,8 @@ export function createContactsModule(onBack) {
 
   // Filter pills (event delegation — stable parent, innerHTML replacements don't break this)
   filterPillsDiv.addEventListener('click', (e) => {
+    const toggle = e.target.closest('[data-toggle="service"]');
+    if (toggle) { hideServiceNumbers = !hideServiceNumbers; renderFilterPills(); renderContacts(); return; }
     const pill = e.target.closest('[data-pill]');
     if (pill) { activeFilter = pill.getAttribute('data-pill'); renderFilterPills(); renderContacts(); }
   });
@@ -1020,6 +1111,23 @@ export function createContactsModule(onBack) {
   container.querySelector('#ct-empty-add-btn').addEventListener('click', openAddModal);
 
   exportBtn.addEventListener('click', () => { exportToJSON(contacts); showToast('Database snapshot exported!', 'success'); });
+
+  // Import dropdown: choose JSON backup or direct CSV import
+  importBtn.addEventListener('click', (e) => {
+    e.stopPropagation();
+    importMenu.classList.toggle('hidden');
+  });
+  document.addEventListener('click', () => importMenu.classList.add('hidden'));
+  importMenu.addEventListener('click', (e) => {
+    const opt = e.target.closest('[data-import-type]');
+    if (!opt) return;
+    importMenu.classList.add('hidden');
+    const type = opt.getAttribute('data-import-type');
+    if (type === 'json') { importInput.click(); return; }
+    pendingCsvSource = type; // 'contacts-csv'
+    importCsvInput.click();
+  });
+
   importInput.addEventListener('change', (e) => {
     const file = e.target.files[0];
     if (!file) return;
@@ -1035,6 +1143,118 @@ export function createContactsModule(onBack) {
     }, (err) => showToast(err, 'error'));
     e.target.value = '';
   });
+
+  importCsvInput.addEventListener('change', (e) => {
+    const file = e.target.files[0];
+    if (!file) return;
+    if (pendingCsvSource === 'contacts-csv') {
+      importFromGoogleCSV(file, (imported) => openImportPreview(imported), () => {
+        importFromOutlookCSV(file, (imported) => openImportPreview(imported), (err) => showToast(err, 'error'));
+      });
+    }
+    e.target.value = '';
+  });
+
+  // ─── IMPORT PREVIEW ───────────────────────────────────────────────────────
+  // Normalize a phone for duplicate comparison: digits only, last 10 (ignores
+  // country-code prefixes so +1 305… matches (305)…).
+  function phoneKey(phone) {
+    const digits = String(phone || '').replace(/\D/g, '');
+    if (!digits) return '';
+    return digits.length > 10 ? digits.slice(-10) : digits;
+  }
+
+  // Flag each imported contact as a duplicate if its phone or email matches an
+  // existing contact (or an earlier row in the same file). Duplicates start unchecked.
+  function buildImportCandidates(imported) {
+    const existingEmails = new Set(contacts.map(c => (c.email || '').toLowerCase()).filter(Boolean));
+    const existingPhones = new Set(contacts.map(c => phoneKey(c.phone)).filter(Boolean));
+    const seenEmails = new Set();
+    const seenPhones = new Set();
+    return imported.map((c) => {
+      const emailKey = (c.email || '').toLowerCase();
+      const pKey = phoneKey(c.phone);
+      let dupReason = '';
+      if (emailKey && (existingEmails.has(emailKey) || seenEmails.has(emailKey))) dupReason = 'email';
+      else if (pKey && (existingPhones.has(pKey) || seenPhones.has(pKey))) dupReason = 'phone';
+      if (emailKey) seenEmails.add(emailKey);
+      if (pKey) seenPhones.add(pKey);
+      const isDuplicate = Boolean(dupReason);
+      return { contact: c, isDuplicate, dupReason, selected: !isDuplicate };
+    });
+  }
+
+  function openImportPreview(imported) {
+    importCandidates = buildImportCandidates(imported);
+    renderImportList();
+    showModal(importBackdrop, importInner);
+  }
+
+  function renderImportList() {
+    const dupCount = importCandidates.filter(c => c.isDuplicate).length;
+    importSummary.textContent = `${importCandidates.length} found · ${dupCount} possible duplicate${dupCount === 1 ? '' : 's'}`;
+    importList.innerHTML = importCandidates.map((cand, i) => {
+      const c = cand.contact;
+      const { bg, text } = getAvatarPalette(c.name);
+      const dupBadge = cand.isDuplicate
+        ? `<span class="px-2 py-0.5 text-[9px] font-bold uppercase tracking-wide rounded-md bg-amber/15 text-amber border border-amber/30 whitespace-nowrap flex-shrink-0">Duplicate · ${cand.dupReason}</span>`
+        : '';
+      return `
+        <label class="flex items-center gap-3 rounded-xl border ${cand.selected ? 'border-softBlue2 bg-white' : 'border-softBlue1 bg-lightGray/60'} px-3 py-2.5 cursor-pointer transition-colors hover:border-steel">
+          <input type="checkbox" data-import-idx="${i}" ${cand.selected ? 'checked' : ''} class="w-4 h-4 accent-navy cursor-pointer flex-shrink-0">
+          <span class="w-8 h-8 rounded-lg flex-shrink-0 flex items-center justify-center font-bold text-[11px] ${bg} ${text} select-none">${getInitials(c.name)}</span>
+          <div class="min-w-0 flex-1">
+            <div class="flex items-center gap-2">
+              <p class="text-sm font-bold text-navy truncate">${escapeHTML(c.name)}</p>
+              ${dupBadge}
+            </div>
+            <p class="text-xs text-steel truncate">${escapeHTML(c.phone || 'No phone')}${c.email ? ' · ' + escapeHTML(c.email) : ''}</p>
+          </div>
+        </label>`;
+    }).join('') || `<div class="text-center py-8 text-steel/60 italic text-xs">Nothing to import.</div>`;
+    updateImportFooter();
+  }
+
+  function updateImportFooter() {
+    const n = importCandidates.filter(c => c.selected).length;
+    importConfirmBtn.textContent = `Import Selected (${n})`;
+    importConfirmBtn.disabled = n === 0;
+    importConfirmBtn.classList.toggle('opacity-50', n === 0);
+    importConfirmBtn.classList.toggle('cursor-not-allowed', n === 0);
+  }
+
+  function confirmImport() {
+    const chosen = importCandidates.filter(c => c.selected).map(c => c.contact);
+    if (chosen.length === 0) return;
+    chosen.forEach(c => contacts.push(c));
+    saveContacts(contacts);
+    closeModal(importBackdrop, importInner);
+    importCandidates = [];
+    renderAll();
+    showToast(`Imported ${chosen.length} contact(s).`, 'success');
+  }
+
+  importList.addEventListener('change', (e) => {
+    const cb = e.target.closest('[data-import-idx]');
+    if (!cb) return;
+    const i = Number(cb.getAttribute('data-import-idx'));
+    importCandidates[i].selected = cb.checked;
+    const label = cb.closest('label');
+    if (label) {
+      label.classList.toggle('bg-white', cb.checked);
+      label.classList.toggle('border-softBlue2', cb.checked);
+      label.classList.toggle('bg-lightGray/60', !cb.checked);
+      label.classList.toggle('border-softBlue1', !cb.checked);
+    }
+    updateImportFooter();
+  });
+  container.querySelector('#ct-import-select-all').addEventListener('click', () => { importCandidates.forEach(c => { c.selected = true; }); renderImportList(); });
+  container.querySelector('#ct-import-select-none').addEventListener('click', () => { importCandidates.forEach(c => { c.selected = false; }); renderImportList(); });
+  container.querySelector('#ct-import-skip-dupes').addEventListener('click', () => { importCandidates.forEach(c => { c.selected = !c.isDuplicate; }); renderImportList(); });
+  container.querySelector('#ct-import-close').addEventListener('click', () => closeModal(importBackdrop, importInner));
+  container.querySelector('#ct-import-cancel').addEventListener('click', () => closeModal(importBackdrop, importInner));
+  importBackdrop.addEventListener('click', (e) => { if (e.target === importBackdrop) closeModal(importBackdrop, importInner); });
+  importConfirmBtn.addEventListener('click', confirmImport);
 
   // Category toggle
   container.querySelector('#cat-business-btn').addEventListener('click', () => updateCategoryToggle('business'));

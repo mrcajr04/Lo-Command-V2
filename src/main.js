@@ -18,6 +18,7 @@ let universalActiveIndex = 0;
 let universalSearchOpen = false;
 let activeSettingsSection = 'account';
 let activeLinksCategory = 'communications';
+let sidebarCollapsed = getItem('lo_command_sidebar_collapsed', false);
 
 const app = document.getElementById('app');
 
@@ -191,7 +192,10 @@ let sidebar = null;
 function activateTab(tabId) {
   activeTab = tabId;
 
-  const newSidebar = createSidebar(activeTab, handleTabChange);
+  const newSidebar = createSidebar(activeTab, handleTabChange, {
+    collapsed: sidebarCollapsed,
+    onToggleCollapse: handleSidebarCollapse,
+  });
   if (sidebar) {
     workspace.replaceChild(newSidebar, sidebar);
   }
@@ -204,6 +208,12 @@ function activateTab(tabId) {
   }
 }
 
+function handleSidebarCollapse(nextCollapsed) {
+  sidebarCollapsed = Boolean(nextCollapsed);
+  setItem('lo_command_sidebar_collapsed', sidebarCollapsed);
+  activateTab(activeTab);
+}
+
 // Tab Change Handler
 function handleTabChange(tabId) {
   // Toggle selection: click active tab to deselect it back to empty canvas state
@@ -213,6 +223,21 @@ function handleTabChange(tabId) {
     activateTab(tabId);
   }
 }
+
+window.addEventListener('deck-quick-action', (event) => {
+  const action = event.detail?.action;
+  if (action === 'add-contact') {
+    activateTab('contacts');
+    requestAnimationFrame(() => activeModule?.openAddModal?.());
+    return;
+  }
+
+  if (action === 'add-link') {
+    activeSettingsSection = 'links';
+    activateTab('settings');
+    requestAnimationFrame(() => canvas.querySelector('#settings-link-name')?.focus());
+  }
+});
 
 function getSettingsContentMarkup() {
   if (activeSettingsSection === 'links') {
@@ -912,7 +937,10 @@ function runUniversalSearchResult(index) {
 }
 
 // Initial Assembly
-sidebar = createSidebar(activeTab, handleTabChange);
+sidebar = createSidebar(activeTab, handleTabChange, {
+  collapsed: sidebarCollapsed,
+  onToggleCollapse: handleSidebarCollapse,
+});
 renderCanvas();
 
 workspace.appendChild(sidebar);

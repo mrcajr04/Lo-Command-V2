@@ -147,3 +147,220 @@ export function importFromJSON(file, onSuccess, onError) {
   };
   reader.readAsText(file);
 }
+
+// Minimal RFC-4180-ish CSV parser: handles quoted fields, escaped "" quotes, and CRLF/LF.
+function parseCSV(text) {
+  const rows = [];
+  let row = [], field = '', inQuotes = false;
+  for (let i = 0; i < text.length; i++) {
+    const ch = text[i];
+    if (inQuotes) {
+      if (ch === '"') {
+        if (text[i + 1] === '"') { field += '"'; i++; }
+        else inQuotes = false;
+      } else field += ch;
+    } else if (ch === '"') {
+      inQuotes = true;
+    } else if (ch === ',') {
+      row.push(field); field = '';
+    } else if (ch === '\n') {
+      row.push(field); rows.push(row); row = []; field = '';
+    } else if (ch !== '\r') {
+      field += ch;
+    }
+  }
+  if (field.length > 0 || row.length > 0) { row.push(field); rows.push(row); }
+  return rows;
+}
+
+// Parse a CSV exported from Outlook (desktop or Outlook.com) into our contact model.
+export function importFromOutlookCSV(file, onSuccess, onError) {
+  const reader = new FileReader();
+  reader.onload = (e) => {
+    try {
+      const rows = parseCSV(String(e.target.result).replace(/^﻿/, '')); // strip BOM
+      if (rows.length < 2) throw new Error('empty');
+
+      const headers = rows[0].map(h => h.trim().toLowerCase());
+      const valByName = (row, name) => {
+        const i = headers.indexOf(name.toLowerCase());
+        return i >= 0 ? String(row[i] || '').trim() : '';
+      };
+      const firstByNames = (row, names) => {
+        for (const n of names) { const v = valByName(row, n); if (v) return v; }
+        return '';
+      };
+      const firstByPredicate = (row, pred) => {
+        for (let i = 0; i < headers.length; i++) {
+          if (pred(headers[i])) { const v = String(row[i] || '').trim(); if (v) return v; }
+        }
+        return '';
+      };
+
+      const out = [];
+      for (let r = 1; r < rows.length; r++) {
+        const row = rows[r];
+        if (!row || row.every(v => !String(v).trim())) continue;
+
+        const first  = firstByNames(row, ['First Name', 'Given Name']);
+        const middle = valByName(row, 'Middle Name');
+        const last   = firstByNames(row, ['Last Name', 'Family Name', 'Surname']);
+        const email  = firstByNames(row, ['E-mail Address', 'E-mail 1 Address', 'E-mail 2 Address', 'Email Address', 'E-mail'])
+          || firstByPredicate(row, h => h.includes('mail') && h.includes('address'))
+          || firstByPredicate(row, h => h.includes('mail'));
+
+        let name = [first, middle, last].filter(Boolean).join(' ').trim();
+        if (!name) name = firstByNames(row, ['Display Name', 'Name', 'Nickname']) || (email ? email.split('@')[0] : '');
+
+        const phone = firstByNames(row, ['Mobile Phone', 'Business Phone', 'Home Phone', 'Primary Phone', 'Business Phone 2', 'Other Phone'])
+          || firstByPredicate(row, h => h.includes('phone'));
+        const company = firstByNames(row, ['Company', 'Organization']);
+        const role = firstByNames(row, ['Job Title']);
+        const notes = firstByNames(row, ['Notes']);
+        const categoriesRaw = firstByNames(row, ['Categories']);
+        const tags = categoriesRaw ? categoriesRaw.split(/[;,]/).map(t => t.trim()).filter(Boolean) : [];
+
+        let birthday = '';
+        const birthdayRaw = firstByNames(row, ['Birthday']);
+        if (birthdayRaw) {
+          const d = new Date(birthdayRaw);
+          if (!isNaN(d.getTime()) && d.getFullYear() > 1900) birthday = d.toISOString().slice(0, 10);
+        }
+
+        if (!name && !email && !phone) continue;
+
+        out.push({
+          id: `csv-${Date.now()}-${r}`,
+          name: name || 'Unnamed Contact',
+          phone,
+          email,
+          birthday,
+          company,
+          role,
+          category: (company || role) ? 'business' : 'personal',
+          tags,
+          notes,
+          favorite: false,
+          createdAt: new Date().toISOString(),
+          timeline: [],
+        });
+      }
+
+      if (out.length === 0) throw new Error('no contacts');
+      onSuccess(out);
+    } catch {
+      onError('Import failed: not a recognized Outlook CSV export.');
+    }
+  };
+  reader.readAsText(file);
+}
+
+// Parse a CSV exported from Google Contacts (Google CSV format) into our contact
+// model. Google uses indexed "<Field> N - Value" columns plus "- Label"/"- Type"
+// siblings, and packs multiple values in one cell separated by " ::: ".
+export function importFromGoogleCSV(file, onSuccess, onError) {
+  const reader = new FileReader();
+  reader.onload = (e) => {
+    try {
+      const rows = parseCSV(String(e.target.result).replace(/^﻿/, ''));
+      if (rows.length < 2) throw new Error('empty');
+
+      const headers = rows[0].map(h => h.trim().toLowerCase());
+      const firstVal = (s) => String(s || '').split(' ::: ')[0].trim();
+      const valByName = (row, name) => {
+        const i = headers.indexOf(name.toLowerCase());
+        return i >= 0 ? firstVal(row[i]) : '';
+      };
+      const firstByNames = (row, names) => {
+        for (const n of names) { const v = valByName(row, n); if (v) return v; }
+        return '';
+      };
+      // Raw accessor (no " ::: " splitting) — used for Labels, which packs multiple
+      // values with that same separator.
+      const rawFirstByNames = (row, names) => {
+        for (const n of names) {
+          const i = headers.indexOf(n.toLowerCase());
+          if (i >= 0) { const v = String(row[i] || '').trim(); if (v) return v; }
+        }
+        return '';
+      };
+      const valueCols = (re) => headers.map((h, i) => ({ h, i })).filter(o => re.test(o.h));
+      const emailCols = valueCols(/^e-?mail \d+ - value$/);
+      const phoneCols = valueCols(/^phone \d+ - value$/);
+      const firstFromCols = (row, cols) => {
+        for (const { i } of cols) { const v = firstVal(row[i]); if (v) return v; }
+        return '';
+      };
+      // Prefer a mobile/cell number if the sibling label/type column says so
+      const pickPhone = (row) => {
+        let fallback = '';
+        for (const { h, i } of phoneCols) {
+          const v = firstVal(row[i]);
+          if (!v) continue;
+          if (!fallback) fallback = v;
+          const ti = headers.indexOf(h.replace(' - value', ' - type'));
+          const li = headers.indexOf(h.replace(' - value', ' - label'));
+          const meta = `${ti >= 0 ? row[ti] : ''} ${li >= 0 ? row[li] : ''}`.toLowerCase();
+          if (/mobile|cell/.test(meta)) return v;
+        }
+        return fallback;
+      };
+      const cleanLabels = (raw) => (raw
+        ? raw.split(/\s*:::\s*|;/).map(s => s.replace(/^\*\s*/, '').trim())
+            .filter(s => s && !/^my\s*contacts$/i.test(s) && !/^starred/i.test(s))
+        : []);
+
+      const out = [];
+      for (let r = 1; r < rows.length; r++) {
+        const row = rows[r];
+        if (!row || row.every(v => !String(v).trim())) continue;
+
+        const first = firstByNames(row, ['First Name', 'Given Name']);
+        const middle = firstByNames(row, ['Middle Name', 'Additional Name']);
+        const last = firstByNames(row, ['Last Name', 'Family Name']);
+        let name = [first, middle, last].filter(Boolean).join(' ').trim();
+        if (!name) name = firstByNames(row, ['Name', 'File As', 'Nickname']);
+
+        const email = firstFromCols(row, emailCols) || firstByNames(row, ['E-mail 1 - Value', 'E-mail Address']);
+        if (!name) name = email ? email.split('@')[0] : '';
+
+        const phone = pickPhone(row);
+        const company = firstByNames(row, ['Organization Name', 'Organization 1 - Name', 'Company']);
+        const role = firstByNames(row, ['Organization Title', 'Organization 1 - Title', 'Job Title']);
+        const notes = firstByNames(row, ['Notes']);
+        const tags = cleanLabels(rawFirstByNames(row, ['Labels', 'Group Membership']));
+
+        let birthday = '';
+        const birthdayRaw = firstByNames(row, ['Birthday']);
+        if (birthdayRaw) {
+          const d = new Date(birthdayRaw);
+          if (!isNaN(d.getTime()) && d.getFullYear() > 1900) birthday = d.toISOString().slice(0, 10);
+        }
+
+        if (!name && !email && !phone) continue;
+
+        out.push({
+          id: `csv-${Date.now()}-${r}`,
+          name: name || 'Unnamed Contact',
+          phone,
+          email,
+          birthday,
+          company,
+          role,
+          category: (company || role) ? 'business' : 'personal',
+          tags,
+          notes,
+          favorite: false,
+          createdAt: new Date().toISOString(),
+          timeline: [],
+        });
+      }
+
+      if (out.length === 0) throw new Error('no contacts');
+      onSuccess(out);
+    } catch {
+      onError('Import failed: not a recognized Google Contacts CSV export.');
+    }
+  };
+  reader.readAsText(file);
+}
