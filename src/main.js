@@ -30,15 +30,15 @@ const globalSearchEmpty = header.querySelector('#global-search-empty');
 const headerSettingsBtn = header.querySelector('#header-settings-btn');
 const WORKSPACE_LINKS_KEY = 'lo_command_workspace_links';
 const DEFAULT_WORKSPACE_LINKS = [
-  { id: 'lnk-1', name: 'Microsoft Teams', url: 'https://teams.microsoft.com', category: 'communications', customIconUrl: '' },
-  { id: 'lnk-2', name: 'Zoom', url: 'https://zoom.us/start/videomeeting', category: 'communications', customIconUrl: '' },
-  { id: 'lnk-3', name: 'Google Meet', url: 'https://meet.google.com', category: 'communications', customIconUrl: '' },
-  { id: 'lnk-4', name: 'WhatsApp', url: 'https://web.whatsapp.com', category: 'communications', customIconUrl: '' },
-  { id: 'lnk-5', name: 'Contacts', url: 'https://outlook.office365.com/people', category: 'mlg-platforms', customIconUrl: '' },
-  { id: 'lnk-6', name: 'Netflix', url: 'https://www.netflix.com', category: 'productivity', customIconUrl: '' },
-  { id: 'lnk-7', name: 'Encompass', url: 'https://encompass.elliemae.com', category: 'mortgage-tech', customIconUrl: '' },
-  { id: 'lnk-8', name: 'Optimal Blue', url: 'https://optimalblue.com/login', category: 'mortgage-tech', customIconUrl: '' },
-  { id: 'lnk-9', name: 'LenderHomepage', url: 'https://app.lenderhomepage.com', category: 'lender-portals', customIconUrl: '' },
+  { id: 'lnk-1', name: 'Microsoft Teams', url: 'https://teams.microsoft.com', category: 'communications', altFaviconDomain: '', bookmarked: true },
+  { id: 'lnk-2', name: 'Zoom', url: 'https://zoom.us/start/videomeeting', category: 'communications', altFaviconDomain: '', bookmarked: true },
+  { id: 'lnk-3', name: 'Google Meet', url: 'https://meet.google.com', category: 'communications', altFaviconDomain: '', bookmarked: true },
+  { id: 'lnk-4', name: 'WhatsApp', url: 'https://web.whatsapp.com', category: 'communications', altFaviconDomain: '', bookmarked: true },
+  { id: 'lnk-5', name: 'Contacts', url: 'https://outlook.office365.com/people', category: 'mlg-platforms', altFaviconDomain: '', bookmarked: true },
+  { id: 'lnk-6', name: 'Netflix', url: 'https://www.netflix.com', category: 'productivity', altFaviconDomain: '', bookmarked: true },
+  { id: 'lnk-7', name: 'Encompass', url: 'https://encompass.elliemae.com', category: 'mortgage-tech', altFaviconDomain: '', bookmarked: false },
+  { id: 'lnk-8', name: 'Optimal Blue', url: 'https://optimalblue.com/login', category: 'mortgage-tech', altFaviconDomain: '', bookmarked: false },
+  { id: 'lnk-9', name: 'LenderHomepage', url: 'https://app.lenderhomepage.com', category: 'lender-portals', altFaviconDomain: '', bookmarked: false },
 ];
 const LINK_CATEGORY_OPTIONS = [
   { key: 'communications', label: 'Communications' },
@@ -54,7 +54,9 @@ function loadWorkspaceLinks() {
     setItem(WORKSPACE_LINKS_KEY, DEFAULT_WORKSPACE_LINKS);
     return DEFAULT_WORKSPACE_LINKS.slice();
   }
-  return Array.isArray(links) ? links : DEFAULT_WORKSPACE_LINKS.slice();
+  return Array.isArray(links)
+    ? links.map((link) => ({ ...link, altFaviconDomain: link.altFaviconDomain || '', bookmarked: Boolean(link.bookmarked) }))
+    : DEFAULT_WORKSPACE_LINKS.slice();
 }
 
 function saveWorkspaceLinks(links) {
@@ -68,9 +70,8 @@ function normalizeLinkUrl(value) {
   return `https://${trimmed}`;
 }
 
-function getLinkFaviconCandidates(url, customIconUrl = '') {
-  if (customIconUrl && customIconUrl.trim()) return [customIconUrl.trim()];
-  const normalized = normalizeLinkUrl(url);
+function getFaviconCandidatesFromDomain(value) {
+  const normalized = normalizeLinkUrl(value);
   if (!normalized) return [];
   try {
     const parsed = new URL(normalized);
@@ -83,6 +84,13 @@ function getLinkFaviconCandidates(url, customIconUrl = '') {
   } catch {
     return [];
   }
+}
+
+function getLinkFaviconCandidates(url, altFaviconDomain = '') {
+  return [
+    ...getFaviconCandidatesFromDomain(altFaviconDomain),
+    ...getFaviconCandidatesFromDomain(url),
+  ];
 }
 
 function escapeHTML(value) {
@@ -104,9 +112,9 @@ function getFallbackFaviconDataUri() {
   `);
 }
 
-function applyFaviconToImage(imgEl, url, customIconUrl = '') {
+function applyFaviconToImage(imgEl, url, altFaviconDomain = '') {
   if (!imgEl) return;
-  const candidates = getLinkFaviconCandidates(url, customIconUrl);
+  const candidates = getLinkFaviconCandidates(url, altFaviconDomain);
   const fallbackSrc = getFallbackFaviconDataUri();
 
   if (candidates.length === 0) {
@@ -197,7 +205,7 @@ function getSettingsContentMarkup() {
 
             <div>
               <p class="text-[11px] font-bold uppercase tracking-[0.18em] text-steel">Add A New Link Inline</p>
-              <div class="mt-3 grid grid-cols-1 xl:grid-cols-[1.1fr_1.5fr_0.7fr_1.2fr_auto] gap-3">
+              <div class="mt-3 grid grid-cols-1 xl:grid-cols-[1fr_1.5fr_1.2fr_0.8fr_auto] gap-3">
                 <input id="settings-link-name" type="text" placeholder="Link name" class="rounded-2xl border border-softBlue2 bg-[#f6f9fd] px-4 py-3 text-sm text-navy placeholder-slate-400 focus:outline-none focus:border-steel">
                 <div class="relative">
                   <div class="pointer-events-none absolute left-4 top-1/2 -translate-y-1/2 flex h-7 w-7 items-center justify-center rounded-lg border border-softBlue2 bg-white shadow-sm">
@@ -205,10 +213,10 @@ function getSettingsContentMarkup() {
                   </div>
                   <input id="settings-link-url" type="text" placeholder="example.com" class="w-full rounded-2xl border border-softBlue2 bg-[#f6f9fd] pl-12 pr-4 py-3 text-sm text-navy placeholder-slate-400 focus:outline-none focus:border-steel">
                 </div>
+                <input id="settings-link-alt-domain" type="text" placeholder="Alternate favicon domain" class="rounded-2xl border border-softBlue2 bg-[#f6f9fd] px-4 py-3 text-sm text-navy placeholder-slate-400 focus:outline-none focus:border-steel">
                 <select id="settings-link-category" class="rounded-2xl border border-softBlue2 bg-[#f6f9fd] px-4 py-3 text-sm text-navy focus:outline-none focus:border-steel">
                   ${LINK_CATEGORY_OPTIONS.map((option) => `<option value="${option.key}" ${option.key === activeLinksCategory ? 'selected' : ''}>${option.label}</option>`).join('')}
                 </select>
-                <input id="settings-link-icon-url" type="text" placeholder="Custom icon URL (optional)" class="rounded-2xl border border-softBlue2 bg-[#f6f9fd] px-4 py-3 text-sm text-navy placeholder-slate-400 focus:outline-none focus:border-steel">
                 <button id="settings-link-add-btn" type="button" class="rounded-2xl bg-navy px-5 py-3 text-sm font-bold text-white hover:bg-steel transition">+ Add</button>
               </div>
             </div>
@@ -275,13 +283,13 @@ function setupLinksManager() {
   const nameEl = canvas.querySelector('#settings-link-name');
   const urlEl = canvas.querySelector('#settings-link-url');
   const categoryEl = canvas.querySelector('#settings-link-category');
-  const iconUrlEl = canvas.querySelector('#settings-link-icon-url');
+  const altDomainEl = canvas.querySelector('#settings-link-alt-domain');
   const addBtn = canvas.querySelector('#settings-link-add-btn');
   const faviconPreviewEl = canvas.querySelector('#settings-link-favicon-preview');
   let editingLinkId = null;
 
   function updateFaviconPreview() {
-    applyFaviconToImage(faviconPreviewEl, urlEl.value || 'example.com', iconUrlEl.value);
+    applyFaviconToImage(faviconPreviewEl, urlEl.value || 'example.com', altDomainEl.value);
   }
 
   function getVisibleLinks() {
@@ -327,11 +335,11 @@ function setupLinksManager() {
         <div class="text-slate-300 text-sm">
           <i class="fa-solid fa-grip-lines"></i>
         </div>
-        <button type="button" class="flex h-8 w-8 items-center justify-center rounded-full border border-gold/40 bg-gold/10 text-gold">
-          <i class="fa-regular fa-bookmark text-xs"></i>
+        <button type="button" data-toggle-bookmark="${link.id}" class="flex h-8 w-8 items-center justify-center rounded-full border transition ${link.bookmarked ? 'border-gold/40 bg-gold/10 text-gold' : 'border-softBlue2 bg-white text-slate-400 hover:bg-softBlue1 hover:text-steel'}">
+          <i class="${link.bookmarked ? 'fa-solid' : 'fa-regular'} fa-bookmark text-xs"></i>
         </button>
         <div class="flex h-8 w-8 items-center justify-center rounded-lg border border-softBlue2 bg-white shadow-sm">
-          <img data-favicon-url="${escapeHTML(link.url)}" data-custom-icon-url="${escapeHTML(link.customIconUrl || '')}" alt="" class="h-5 w-5 rounded-sm object-contain">
+          <img data-favicon-url="${escapeHTML(link.url)}" data-alt-favicon-domain="${escapeHTML(link.altFaviconDomain || '')}" alt="" class="h-5 w-5 rounded-sm object-contain">
         </div>
         <div class="min-w-0 flex-1">
           <div class="text-sm font-bold text-navy truncate">${escapeHTML(link.name)}</div>
@@ -357,7 +365,7 @@ function setupLinksManager() {
       applyFaviconToImage(
         imgEl,
         imgEl.getAttribute('data-favicon-url') || '',
-        imgEl.getAttribute('data-custom-icon-url') || ''
+        imgEl.getAttribute('data-alt-favicon-domain') || ''
       );
     });
   }
@@ -366,7 +374,7 @@ function setupLinksManager() {
     editingLinkId = null;
     nameEl.value = '';
     urlEl.value = '';
-    iconUrlEl.value = '';
+    altDomainEl.value = '';
     categoryEl.value = activeLinksCategory === 'all' ? 'communications' : activeLinksCategory;
     addBtn.textContent = '+ Add';
     updateFaviconPreview();
@@ -376,29 +384,30 @@ function setupLinksManager() {
     const name = nameEl.value.trim();
     const url = normalizeLinkUrl(urlEl.value);
     const category = categoryEl.value;
-    const customIconUrl = iconUrlEl.value.trim();
+    const altFaviconDomain = altDomainEl.value.trim();
     if (!name || !url) return;
 
     const links = loadWorkspaceLinks();
     if (editingLinkId) {
       const index = links.findIndex((link) => link.id === editingLinkId);
       if (index !== -1) {
-        links[index] = { ...links[index], name, url, category, customIconUrl };
+        links[index] = { ...links[index], name, url, category, altFaviconDomain };
       }
     } else {
-      links.unshift({ id: `lnk-${Date.now()}`, name, url, category, customIconUrl });
+      links.unshift({ id: `lnk-${Date.now()}`, name, url, category, altFaviconDomain });
     }
 
     saveWorkspaceLinks(links);
     activeLinksCategory = category;
     renderCategoryPills();
     renderList();
+    window.dispatchEvent(new CustomEvent('workspace-links-updated'));
     resetForm();
   }
 
   searchEl.addEventListener('input', renderList);
   urlEl.addEventListener('input', updateFaviconPreview);
-  iconUrlEl.addEventListener('input', updateFaviconPreview);
+  altDomainEl.addEventListener('input', updateFaviconPreview);
   addBtn.addEventListener('click', upsertLink);
 
   categoriesEl.addEventListener('click', (event) => {
@@ -413,6 +422,20 @@ function setupLinksManager() {
   });
 
   listEl.addEventListener('click', (event) => {
+    const bookmarkBtn = event.target.closest('[data-toggle-bookmark]');
+    if (bookmarkBtn) {
+      const links = loadWorkspaceLinks();
+      const linkId = bookmarkBtn.getAttribute('data-toggle-bookmark');
+      const index = links.findIndex((item) => item.id === linkId);
+      if (index !== -1) {
+        links[index] = { ...links[index], bookmarked: !links[index].bookmarked };
+        saveWorkspaceLinks(links);
+        renderList();
+        window.dispatchEvent(new CustomEvent('workspace-links-updated'));
+      }
+      return;
+    }
+
     const editBtn = event.target.closest('[data-edit-link]');
     if (editBtn) {
       const link = loadWorkspaceLinks().find((item) => item.id === editBtn.getAttribute('data-edit-link'));
@@ -421,7 +444,7 @@ function setupLinksManager() {
       nameEl.value = link.name;
       urlEl.value = link.url;
       categoryEl.value = link.category;
-      iconUrlEl.value = link.customIconUrl || '';
+      altDomainEl.value = link.altFaviconDomain || '';
       addBtn.textContent = 'Save';
       updateFaviconPreview();
       return;
@@ -433,6 +456,7 @@ function setupLinksManager() {
       saveWorkspaceLinks(nextLinks);
       renderCategoryPills();
       renderList();
+      window.dispatchEvent(new CustomEvent('workspace-links-updated'));
       if (editingLinkId === deleteBtn.getAttribute('data-delete-link')) {
         resetForm();
       }

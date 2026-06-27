@@ -5,6 +5,7 @@
 export function createWidgetDeck() {
   const aside = document.createElement('aside');
   aside.className = 'w-72 bg-navy border-l border-steel/40 flex flex-col relative flex-shrink-0 text-white select-none';
+  const LINKS_KEY = 'lo_command_workspace_links';
 
   // State: active widgets — persisted to localStorage so state survives tab switches and page refreshes
   const DECK_KEY = 'lo_command_widget_active';
@@ -22,6 +23,32 @@ export function createWidgetDeck() {
     { id: 3, text: 'Approve rate lock extension request', completed: false },
     { id: 4, text: 'Dispatch disclosure packet - #903', completed: false }
   ];
+
+  function normalizeUrl(value) {
+    const trimmed = String(value || '').trim();
+    if (!trimmed) return '#';
+    return /^https?:\/\//i.test(trimmed) ? trimmed : `https://${trimmed}`;
+  }
+
+  function loadBookmarkedLinks() {
+    try {
+      const saved = localStorage.getItem(LINKS_KEY);
+      const parsed = saved ? JSON.parse(saved) : [];
+      return Array.isArray(parsed) ? parsed.filter(link => link.bookmarked) : [];
+    } catch {
+      return [];
+    }
+  }
+
+  function getLinkIcon(url, altFaviconDomain = '') {
+    const source = altFaviconDomain || url;
+    try {
+      const parsed = new URL(normalizeUrl(source));
+      return `https://icons.duckduckgo.com/ip3/${parsed.hostname}.ico`;
+    } catch {
+      return '';
+    }
+  }
 
   // Configuration and rendering rules for each widget type
   const widgetDefinitions = {
@@ -64,22 +91,16 @@ export function createWidgetDeck() {
       title: 'Favorite Links',
       iconClass: 'fa-solid fa-link text-gold text-xs mr-1.5',
       render: () => {
-        const links = [
-          { label: 'Fannie Mae Guide', iconColor: '#1E7A3A', letter: 'F' },
-          { label: 'Optimal Blue Pricing', iconColor: '#2E5F8A', letter: 'O' },
-          { label: 'Daily Yield Curves', iconColor: '#C97A1A', letter: 'Y' },
-          { label: 'MLG Guidelines', iconColor: '#1A7A6E', letter: 'M' },
-          { label: 'MBS Live Feed', iconColor: '#C9A02C', letter: 'L' }
-        ];
+        const links = loadBookmarkedLinks();
 
         return `
           <div class="flex flex-wrap gap-1.5 py-1.5">
-            ${links.map(l => `
-              <a href="#" class="inline-flex items-center gap-1 px-2.5 py-1 bg-steel/35 hover:bg-steel/60 border border-steel/50 rounded-full text-[10px] text-slate-200 transition duration-150" onclick="event.preventDefault();">
-                <span class="h-4 w-4 rounded-full flex items-center justify-center text-[8px] text-white font-black flex-shrink-0" style="background-color: ${l.iconColor};">
-                  ${l.letter}
+            ${links.length === 0 ? `<span class="text-[10px] text-slate-400">No bookmarked links yet.</span>` : links.map(l => `
+              <a href="${normalizeUrl(l.url)}" target="_blank" rel="noreferrer" class="inline-flex items-center gap-1.5 px-2.5 py-1 bg-steel/35 hover:bg-steel/60 border border-steel/50 rounded-full text-[10px] text-slate-200 transition duration-150">
+                <span class="h-4 w-4 rounded-full bg-white flex items-center justify-center overflow-hidden flex-shrink-0">
+                  <img src="${getLinkIcon(l.url, l.altFaviconDomain)}" alt="" class="h-3.5 w-3.5 object-contain" onerror="this.style.display='none'">
                 </span>
-                <span class="font-medium max-w-[110px] truncate">${l.label}</span>
+                <span class="font-medium max-w-[110px] truncate">${l.name}</span>
               </a>
             `).join('')}
           </div>
@@ -198,6 +219,8 @@ export function createWidgetDeck() {
   document.addEventListener('click', () => {
     dropdown.classList.add('hidden');
   });
+
+  window.addEventListener('workspace-links-updated', updateDeck);
 
   // Re-render and update widgets container
   function updateDeck() {
