@@ -18,8 +18,15 @@ export function createContactsModule(onBack) {
   let viewMode = 'grid';
   let detailContactId = null;
   let pendingDeleteId = null;
+  let editingNoteId = null;
   let formTags = [];
   let formCategory = 'business';
+  // Scroll thresholds (px) for the progressive compact header — measured per contact
+  let compactThresholds = { contact: 9999, notes: 9999 };
+  let compactHasNotes = false;
+  let lastHeaderH = 112; // tracks header height to compensate scrollTop when it grows/shrinks
+  let compactContactShown = false;
+  let compactNotesShown = false;
 
   container.innerHTML = `
   <div id="ct-toast" class="fixed bottom-6 right-6 z-[60] flex flex-col space-y-3 max-w-sm w-full pointer-events-none"></div>
@@ -230,15 +237,39 @@ export function createContactsModule(onBack) {
   <!-- DETAIL MODAL -->
   <div id="ct-detail-backdrop" class="fixed inset-0 bg-navy/60 backdrop-blur-sm flex items-center justify-center p-4 z-50 hidden transition-all duration-300 opacity-0">
     <div class="bg-white rounded-2xl shadow-2xl max-w-lg w-full overflow-hidden border border-softBlue2 transform scale-95 transition-all duration-300 flex flex-col max-h-[92vh]">
-      <div class="h-28 bg-navy relative flex-shrink-0 border-b-2 border-gold">
-        <button id="ct-detail-close" class="absolute top-4 right-4 bg-white/10 hover:bg-white/25 text-white p-1.5 rounded-full transition-all focus:outline-none">
+      <div id="ct-detail-header" class="h-28 bg-navy relative flex-shrink-0 border-b-2 border-gold">
+        <button id="ct-detail-close" class="absolute top-4 right-4 z-20 bg-white/10 hover:bg-white/25 text-white p-1.5 rounded-full transition-all focus:outline-none">
           <i data-lucide="x" class="w-5 h-5"></i>
         </button>
-        <button id="ct-detail-star-btn" class="absolute top-4 left-4 bg-white/10 hover:bg-white/25 text-white p-1.5 rounded-full transition-all focus:outline-none"></button>
-        <div id="ct-detail-avatar" class="absolute left-1/2 -translate-x-1/2 -bottom-12 z-10 w-24 h-24 rounded-2xl border-4 border-white shadow-lg bg-steel text-white font-extrabold text-3xl flex items-center justify-center select-none"></div>
+        <button id="ct-detail-star-btn" class="absolute top-4 left-4 z-20 bg-white/10 hover:bg-white/25 text-white p-1.5 rounded-full transition-all focus:outline-none"></button>
+        <div id="ct-detail-avatar" class="absolute left-1/2 -translate-x-1/2 -bottom-12 z-10 w-24 h-24 rounded-2xl border-4 border-white shadow-lg bg-steel text-white font-extrabold text-3xl flex items-center justify-center select-none transition-opacity duration-300"></div>
+
+        <!-- Compact identity bar — fades in and progressively expands as user scrolls down -->
+        <div id="ct-detail-compact-bar" class="absolute inset-x-0 top-0 px-5 opacity-0 pointer-events-none transition-opacity duration-300">
+          <div class="h-28 flex items-center gap-3 px-9">
+            <div id="ct-detail-compact-avatar" class="w-9 h-9 rounded-xl font-extrabold text-sm flex items-center justify-center flex-shrink-0 select-none"></div>
+            <div class="min-w-0">
+              <p id="ct-detail-compact-name" class="text-white font-extrabold text-sm leading-tight truncate"></p>
+              <p id="ct-detail-compact-sub" class="text-white/60 text-[10px] font-bold uppercase tracking-wider leading-tight mt-0.5 truncate"></p>
+            </div>
+          </div>
+          <div id="ct-compact-contact" class="hidden pb-3 space-y-1.5 border-t border-white/10 pt-2.5">
+            <div class="flex items-center gap-2 text-white/85 text-xs">
+              <i data-lucide="phone" class="w-3.5 h-3.5 text-white/40 flex-shrink-0"></i>
+              <span id="ct-compact-phone" class="font-semibold truncate"></span>
+            </div>
+            <div id="ct-compact-email-row" class="flex items-center gap-2 text-white/85 text-xs">
+              <i data-lucide="mail" class="w-3.5 h-3.5 text-white/40 flex-shrink-0"></i>
+              <span id="ct-compact-email" class="font-semibold truncate"></span>
+            </div>
+          </div>
+          <div id="ct-compact-notes" class="hidden pb-3 border-t border-white/10 pt-2.5">
+            <p id="ct-compact-notes-text" class="text-white/70 text-[11px] italic leading-snug line-clamp-2"></p>
+          </div>
+        </div>
       </div>
 
-      <div class="overflow-y-auto flex-grow pt-16 px-6 pb-6 space-y-6 custom-scrollbar">
+      <div id="ct-detail-scroll" class="relative overflow-y-auto flex-grow pt-16 px-6 pb-6 space-y-6 custom-scrollbar">
         <div class="flex flex-col items-center border-b border-softBlue1 pb-5">
           <h3 id="ct-detail-name" class="text-xl font-extrabold text-navy"></h3>
           <p id="ct-detail-sub" class="text-xs font-bold text-steel uppercase tracking-wider mt-1 text-center"></p>
@@ -248,7 +279,7 @@ export function createContactsModule(onBack) {
           </div>
         </div>
 
-        <div class="space-y-3">
+        <div id="ct-detail-contact-section" class="space-y-3">
           <h4 class="text-xs font-bold text-steel uppercase tracking-wider">Contact Details</h4>
           <div class="flex items-start justify-between bg-lightGray p-3.5 rounded-xl border border-softBlue2">
             <div class="flex items-center space-x-3">
@@ -287,7 +318,7 @@ export function createContactsModule(onBack) {
           </div>
         </div>
 
-        <div class="space-y-4 pt-2 border-t border-softBlue2">
+        <div id="ct-detail-activity-section" class="space-y-4 pt-2 border-t border-softBlue2">
           <div class="flex items-center justify-between">
             <h4 class="text-xs font-bold text-steel uppercase tracking-wider flex items-center gap-1.5">
               <i data-lucide="clipboard-list" class="w-4 h-4 text-gold"></i>
@@ -306,17 +337,6 @@ export function createContactsModule(onBack) {
           </div>
           <div class="relative pl-4 space-y-4 border-l-2 border-softBlue2/80 mt-2" id="ct-timeline-list"></div>
         </div>
-      </div>
-
-      <div class="px-6 py-4 bg-lightGray border-t border-softBlue1 flex items-center justify-between flex-shrink-0">
-        <button id="ct-detail-delete" class="flex items-center space-x-1 px-3 py-1.5 text-xs font-bold text-amber hover:bg-softBlue1 rounded-lg transition-colors focus:outline-none">
-          <i data-lucide="trash-2" class="w-4 h-4"></i>
-          <span>Delete Card</span>
-        </button>
-        <button id="ct-detail-edit" class="flex items-center space-x-1 px-4 py-2 text-xs font-bold text-white bg-navy hover:bg-steel rounded-lg border border-transparent transition-all focus:outline-none">
-          <i data-lucide="edit-3" class="w-4 h-4"></i>
-          <span>Edit Profile</span>
-        </button>
       </div>
     </div>
   </div>
@@ -347,7 +367,19 @@ export function createContactsModule(onBack) {
 
   const detailBackdrop    = container.querySelector('#ct-detail-backdrop');
   const detailInner       = detailBackdrop.querySelector('div');
+  const detailHeader      = container.querySelector('#ct-detail-header');
   const detailAvatar      = container.querySelector('#ct-detail-avatar');
+  const detailScroll      = container.querySelector('#ct-detail-scroll');
+  const detailCompactBar  = container.querySelector('#ct-detail-compact-bar');
+  const detailCompactAv   = container.querySelector('#ct-detail-compact-avatar');
+  const detailCompactName = container.querySelector('#ct-detail-compact-name');
+  const detailCompactSub  = container.querySelector('#ct-detail-compact-sub');
+  const compactContact    = container.querySelector('#ct-compact-contact');
+  const compactPhone      = container.querySelector('#ct-compact-phone');
+  const compactEmailRow   = container.querySelector('#ct-compact-email-row');
+  const compactEmail      = container.querySelector('#ct-compact-email');
+  const compactNotes      = container.querySelector('#ct-compact-notes');
+  const compactNotesText  = container.querySelector('#ct-compact-notes-text');
   const detailName        = container.querySelector('#ct-detail-name');
   const detailSub         = container.querySelector('#ct-detail-sub');
   const detailPhone       = container.querySelector('#ct-detail-phone');
@@ -596,14 +628,46 @@ export function createContactsModule(onBack) {
     const c = contacts.find(x => x.id === id);
     if (!c) return;
     detailContactId = id;
+    editingNoteId = null;
 
     const { bg, text } = getAvatarPalette(c.name);
-    detailAvatar.className = `absolute left-1/2 -translate-x-1/2 -bottom-12 z-10 w-24 h-24 rounded-2xl border-4 border-white shadow-lg font-extrabold text-3xl flex items-center justify-center select-none ${bg} ${text}`;
+    detailAvatar.className = `absolute left-1/2 -translate-x-1/2 -bottom-12 z-10 w-24 h-24 rounded-2xl border-4 border-white shadow-lg font-extrabold text-3xl flex items-center justify-center select-none transition-opacity duration-300 ${bg} ${text}`;
+    detailAvatar.style.opacity = '1';
     detailAvatar.textContent = getInitials(c.name);
 
     detailName.textContent = c.name;
     const subParts = [c.role, c.company ? `• ${c.company}` : ''].filter(Boolean);
     detailSub.textContent = subParts.join(' ') || 'No Registered Job Designation';
+
+    // Populate compact bar — identity row
+    detailCompactAv.className = `w-9 h-9 rounded-xl font-extrabold text-sm flex items-center justify-center flex-shrink-0 select-none ${bg} ${text}`;
+    detailCompactAv.textContent = getInitials(c.name);
+    detailCompactName.textContent = c.name;
+    detailCompactSub.textContent = subParts.join(' ') || 'No Registered Job Designation';
+
+    // Populate compact bar — phone / email
+    compactPhone.textContent = c.phone;
+    if (c.email) {
+      compactEmail.textContent = c.email;
+      compactEmailRow.classList.remove('hidden');
+    } else {
+      compactEmailRow.classList.add('hidden');
+    }
+
+    // Populate compact bar — notes
+    compactHasNotes = Boolean(c.notes);
+    compactNotesText.textContent = c.notes || '';
+
+    // Reset scroll + compact state each time modal opens
+    detailScroll.scrollTop = 0;
+    detailCompactBar.style.opacity = '0';
+    detailAvatar.style.opacity = '1';
+    detailHeader.style.height = '';
+    lastHeaderH = 112;
+    compactContactShown = false;
+    compactNotesShown = false;
+    compactContact.classList.add('hidden');
+    compactNotes.classList.add('hidden');
 
     const catTag = container.querySelector('#ct-detail-category-tag');
     catTag.textContent = c.category === 'business' ? 'Business' : 'Personal';
@@ -635,6 +699,21 @@ export function createContactsModule(onBack) {
     updateDetailStar(c);
     renderTimeline(c);
     showModal(detailBackdrop, detailInner);
+
+    // Measure scroll thresholds after layout settles.
+    // contact: surface phone/email once the Contact Details block scrolls above the fold.
+    // notes:   surface notes once the Notes block scrolls above the fold.
+    requestAnimationFrame(() => {
+      const contactSection  = container.querySelector('#ct-detail-contact-section');
+      const notesSection    = container.querySelector('#ct-detail-notes-wrapper');
+      const activitySection = container.querySelector('#ct-detail-activity-section');
+      compactThresholds.contact = contactSection
+        ? contactSection.offsetTop + contactSection.offsetHeight - 40
+        : 9999;
+      compactThresholds.notes = compactHasNotes && notesSection
+        ? notesSection.offsetTop + notesSection.offsetHeight - 40
+        : (activitySection ? activitySection.offsetTop : 9999);
+    });
   }
 
   function updateDetailStar(c) {
@@ -649,8 +728,12 @@ export function createContactsModule(onBack) {
     timelineCount.textContent = `${entries.length} Entry(ies)`;
     timelineList.innerHTML = entries.length === 0
       ? '<div class="text-center py-4 text-steel/60 italic text-xs">No recorded timeline actions yet.</div>'
-      : entries.map(renderTimelineEntry).join('');
+      : entries.map(e => renderTimelineEntry(e, editingNoteId)).join('');
     if (window.lucide) window.lucide.createIcons();
+    if (editingNoteId) {
+      const ta = timelineList.querySelector(`[data-note-edit-input="${editingNoteId}"]`);
+      if (ta) { ta.focus(); ta.setSelectionRange(ta.value.length, ta.value.length); }
+    }
   }
 
   // ─── CRUD ─────────────────────────────────────────────────────────────────
@@ -695,9 +778,39 @@ export function createContactsModule(onBack) {
   function deleteTimelineNote(noteId) {
     const c = contacts.find(x => x.id === detailContactId);
     if (!c) return;
+    if (editingNoteId === noteId) editingNoteId = null;
     c.timeline = (c.timeline || []).filter(n => n.id !== noteId);
     saveContacts(contacts);
     showToast('Activity note removed.', 'success');
+    renderTimeline(c);
+    renderContacts();
+  }
+
+  function startEditTimelineNote(noteId) {
+    editingNoteId = noteId;
+    const c = contacts.find(x => x.id === detailContactId);
+    if (c) renderTimeline(c);
+  }
+
+  function cancelEditTimelineNote() {
+    editingNoteId = null;
+    const c = contacts.find(x => x.id === detailContactId);
+    if (c) renderTimeline(c);
+  }
+
+  function saveEditTimelineNote(noteId) {
+    const c = contacts.find(x => x.id === detailContactId);
+    if (!c) return;
+    const ta = timelineList.querySelector(`[data-note-edit-input="${noteId}"]`);
+    const text = (ta?.value || '').trim();
+    if (!text) { showToast('Note cannot be blank.', 'error'); return; }
+    const entry = (c.timeline || []).find(n => n.id === noteId);
+    if (!entry) return;
+    entry.note = text;
+    entry.editedAt = new Date().toISOString();
+    editingNoteId = null;
+    saveContacts(contacts);
+    showToast('Activity note updated.', 'success');
     renderTimeline(c);
     renderContacts();
   }
@@ -821,15 +934,48 @@ export function createContactsModule(onBack) {
     if (card) openDetailModal(card.getAttribute('data-id'));
   });
 
-  // Detail modal
+  // Detail modal — progressive compact header on scroll
+  detailScroll.addEventListener('scroll', () => {
+    const y = detailScroll.scrollTop;
+    const active = y > 72;
+    detailAvatar.style.opacity = active ? '0' : '1';
+    detailCompactBar.style.opacity = active ? '1' : '0';
+
+    // Hysteresis: each row turns on when scrolled past its threshold, but only turns
+    // off after scrolling back BAND px above it. Without this dead-band, dragging the
+    // scrollbar near a threshold flickers — the header height change re-maps the held
+    // mouse position to a different scrollTop, which re-crosses the threshold, and so on.
+    const BAND = 90;
+    if (!active) {
+      compactContactShown = false;
+      compactNotesShown = false;
+    } else {
+      compactContactShown = compactContactShown
+        ? y > compactThresholds.contact - BAND
+        : y > compactThresholds.contact;
+      compactNotesShown = compactHasNotes && (compactNotesShown
+        ? y > compactThresholds.notes - BAND
+        : y > compactThresholds.notes);
+    }
+    compactContact.classList.toggle('hidden', !compactContactShown);
+    compactNotes.classList.toggle('hidden', !compactNotesShown);
+
+    // Grow the navy header to fit whatever compact rows are visible
+    const newHeaderH = active ? detailCompactBar.scrollHeight : 112;
+    detailHeader.style.height = active ? `${newHeaderH}px` : '';
+
+    // The header lives above the scroll viewport, so growing it shoves all content
+    // down — a backward lurch against the scroll direction. Compensate scrollTop by
+    // the height delta so the content stays visually anchored. (No height animation,
+    // so the instant compensation cancels the jump perfectly.)
+    const delta = newHeaderH - lastHeaderH;
+    if (delta !== 0) detailScroll.scrollTop = y + delta;
+    lastHeaderH = newHeaderH;
+  });
+
   container.querySelector('#ct-detail-close').addEventListener('click', () => closeModal(detailBackdrop, detailInner));
   detailBackdrop.addEventListener('click', (e) => { if (e.target === detailBackdrop) closeModal(detailBackdrop, detailInner); });
   container.querySelector('#ct-detail-star-btn').addEventListener('click', () => { if (detailContactId) toggleFavorite(detailContactId); });
-  container.querySelector('#ct-detail-edit').addEventListener('click', () => {
-    closeModal(detailBackdrop, detailInner);
-    setTimeout(() => openEditModal(detailContactId), 160);
-  });
-  container.querySelector('#ct-detail-delete').addEventListener('click', () => { if (detailContactId) openDeleteModal(detailContactId); });
   container.querySelector('#ct-copy-phone').addEventListener('click', () => {
     const c = contacts.find(x => x.id === detailContactId);
     if (c) copyText(c.phone, 'Phone copied!');
@@ -841,8 +987,15 @@ export function createContactsModule(onBack) {
   container.querySelector('#ct-note-add-btn').addEventListener('click', addTimelineNote);
   noteInput.addEventListener('keydown', (e) => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); addTimelineNote(); } });
   timelineList.addEventListener('click', (e) => {
-    const btn = e.target.closest('[data-action="delete-note"]');
-    if (btn) deleteTimelineNote(btn.getAttribute('data-note-id'));
+    const action = e.target.closest('[data-action]');
+    if (!action) return;
+    const noteId = action.getAttribute('data-note-id');
+    switch (action.getAttribute('data-action')) {
+      case 'delete-note':      deleteTimelineNote(noteId); break;
+      case 'edit-note':        startEditTimelineNote(noteId); break;
+      case 'save-note-edit':   saveEditTimelineNote(noteId); break;
+      case 'cancel-note-edit': cancelEditTimelineNote(); break;
+    }
   });
 
   // ─── RUN ──────────────────────────────────────────────────────────────────

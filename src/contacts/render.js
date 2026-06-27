@@ -143,25 +143,46 @@ export function renderContactRow(contact, index) {
   </div>`;
 }
 
-export function renderTimelineEntry(entry) {
+export function renderTimelineEntry(entry, editingNoteId = null) {
   const formatted = new Date(entry.timestamp).toLocaleDateString('en-US', {
     year: 'numeric', month: 'short', day: 'numeric',
     hour: '2-digit', minute: '2-digit', second: '2-digit'
   });
+  const isEditing = entry.id === editingNoteId;
+  const editedLabel = entry.editedAt
+    ? `<span class="flex items-center gap-1 text-steel/55 font-medium italic normal-case whitespace-nowrap">
+         <i data-lucide="pencil" class="w-2.5 h-2.5"></i>Last edited ${new Date(entry.editedAt).toLocaleDateString('en-US', { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })}
+       </span>`
+    : '';
+  const body = isEditing
+    ? `<textarea data-note-edit-input="${entry.id}" rows="2" class="w-full p-2 text-xs bg-white border-2 border-steel rounded-lg text-navy focus:outline-none focus:ring-2 focus:ring-steel resize-none">${escapeHTML(entry.note)}</textarea>
+       <div class="flex justify-end gap-2 mt-2">
+         <button data-action="cancel-note-edit" class="px-3 py-1 text-[10px] font-bold text-steel hover:text-navy focus:outline-none">Cancel</button>
+         <button data-action="save-note-edit" data-note-id="${entry.id}" class="px-3 py-1 text-[10px] font-bold text-white bg-steel hover:bg-navy rounded-lg focus:outline-none">Save</button>
+       </div>`
+    : `<p class="text-xs font-semibold text-navy leading-relaxed break-words whitespace-pre-wrap">${escapeHTML(entry.note)}</p>`;
   return `
   <div class="relative pb-1 group/note">
     <span class="absolute -left-[21px] top-1.5 flex h-2 w-2 rounded-full bg-gold border border-white ring-4 ring-white"></span>
     <div class="bg-lightGray p-3 rounded-xl border border-softBlue2 transition-all hover:bg-softBlue1">
-      <div class="flex items-center justify-between mb-1.5 text-[10px] text-steel font-bold">
-        <span class="flex items-center gap-1">
+      <div class="flex items-center justify-between gap-2 mb-1.5 text-[10px] text-steel font-bold">
+        <span class="flex items-center gap-1 flex-shrink-0">
           <i data-lucide="clock" class="w-3 h-3"></i>
           <span>${formatted}</span>
         </span>
-        <button data-action="delete-note" data-note-id="${entry.id}" class="text-steel hover:text-amber opacity-100 sm:opacity-0 group-hover/note:opacity-100 transition-opacity focus:outline-none" title="Delete Note">
-          <i data-lucide="trash-2" class="w-3.5 h-3.5"></i>
-        </button>
+        <div class="flex items-center gap-2.5 min-w-0">
+          ${editedLabel}
+          ${isEditing ? '' : `<div class="flex items-center gap-1.5 flex-shrink-0 opacity-100 sm:opacity-0 group-hover/note:opacity-100 transition-opacity">
+            <button data-action="edit-note" data-note-id="${entry.id}" class="text-steel hover:text-navy focus:outline-none" title="Edit Note">
+              <i data-lucide="pencil" class="w-3.5 h-3.5"></i>
+            </button>
+            <button data-action="delete-note" data-note-id="${entry.id}" class="text-steel hover:text-amber focus:outline-none" title="Delete Note">
+              <i data-lucide="trash-2" class="w-3.5 h-3.5"></i>
+            </button>
+          </div>`}
+        </div>
       </div>
-      <p class="text-xs font-semibold text-navy leading-relaxed break-words whitespace-pre-wrap">${escapeHTML(entry.note)}</p>
+      ${body}
     </div>
   </div>`;
 }
