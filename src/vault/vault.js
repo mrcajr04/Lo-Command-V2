@@ -55,6 +55,9 @@ export function createVaultModule() {
   let expandedItems = new Set(); // Tracks expanded details tray IDs
   let derivedKey = null; // In-memory cryptographic key (never stored)
   let isProcessing = false; // Prevents double submission during crypto actions
+  const AUTO_LOCK_MS = 5 * 60 * 1000;
+  let autoLockDeadline = null;
+  let autoLockIntervalId = null;
 
   // Initial markup structure
   container.innerHTML = `
@@ -122,9 +125,16 @@ export function createVaultModule() {
                     </div>
                 </div>
 
-                <button id="btn-lock-vault" class="px-3 py-1.5 rounded-lg text-xs border border-softBlue2/30 hover:border-red-400/45 text-softBlue2 hover:text-red-300 hover:bg-red-950/20 transition-all flex items-center gap-1.5 focus:outline-none">
-                    <i data-lucide="lock" class="w-3.5 h-3.5"></i> Lock Vault
-                </button>
+                <div class="flex items-center gap-2.5">
+                    <div id="vault-timer-pill" class="inline-flex items-center gap-1.5 rounded-lg border border-softBlue2/25 bg-white/8 px-3 py-1.5 text-xs font-semibold text-softBlue2">
+                        <i data-lucide="timer-reset" class="w-3.5 h-3.5 text-gold"></i>
+                        <span>Auto-lock in</span>
+                        <span id="vault-timer-value" class="font-mono text-white">05:00</span>
+                    </div>
+                    <button id="btn-lock-vault" class="px-3 py-1.5 rounded-lg text-xs border border-softBlue2/30 hover:border-red-400/45 text-softBlue2 hover:text-red-300 hover:bg-red-950/20 transition-all flex items-center gap-1.5 focus:outline-none">
+                        <i data-lucide="lock" class="w-3.5 h-3.5"></i> Lock Vault
+                    </button>
+                </div>
             </div>
         </header>
 
@@ -180,9 +190,9 @@ export function createVaultModule() {
 
     <!-- ================= ADD / EDIT MODAL ================= -->
     <div id="vault-modal-backdrop" class="fixed inset-0 z-50 bg-navy/60 backdrop-blur-sm hidden items-center justify-center p-4 transition-all">
-        <div id="vault-modal-content" class="bg-white border-2 border-softBlue2 rounded-2xl w-full max-w-md shadow-2xl overflow-hidden scale-95 opacity-0 transition-all duration-150">
+        <div id="vault-modal-content" class="bg-white border-2 border-softBlue2 rounded-2xl w-full max-w-2xl shadow-2xl overflow-hidden scale-95 opacity-0 transition-all duration-150">
             <!-- Modal Header -->
-            <div class="p-4 border-b border-softBlue2 flex items-center justify-between bg-lightGray select-none">
+            <div class="px-5 py-4 border-b border-softBlue2 flex items-center justify-between bg-lightGray select-none">
                 <div>
                     <h3 id="vault-modal-title" class="text-sm font-bold text-navy">New Credential</h3>
                     <p class="text-[10px] text-steel mt-0.5">Required fields are marked *</p>
@@ -193,7 +203,7 @@ export function createVaultModule() {
             </div>
 
             <!-- Form -->
-            <form id="vault-credential-form" class="p-4 space-y-3">
+            <form id="vault-credential-form" class="p-5 space-y-4">
                 <input type="hidden" id="form-item-id">
                 
                 <div>
@@ -206,7 +216,7 @@ export function createVaultModule() {
                     </select>
                 </div>
 
-                <div class="grid grid-cols-2 gap-3">
+                <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
                     <div>
                         <label class="block text-[9px] font-bold uppercase tracking-wider text-steel mb-1">System Name *</label>
                         <input type="text" id="form-name" required placeholder="e.g. Encompass" class="w-full bg-lightGray border-2 border-softBlue2 rounded-lg px-2.5 py-1.5 text-xs text-navy focus:border-steel outline-none">
@@ -217,7 +227,7 @@ export function createVaultModule() {
                     </div>
                 </div>
 
-                <div class="grid grid-cols-2 gap-3">
+                <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
                     <div>
                         <label class="block text-[9px] font-bold uppercase tracking-wider text-steel mb-1">Username / ID *</label>
                         <input type="text" id="form-username" required placeholder="Enter login ID" class="w-full bg-lightGray border-2 border-softBlue2 rounded-lg px-2.5 py-1.5 text-xs text-navy focus:border-steel outline-none">
@@ -248,7 +258,7 @@ export function createVaultModule() {
                     <textarea id="form-notes" rows="2" placeholder="e.g. security questions answer: Bluebird" class="w-full bg-lightGray border-2 border-softBlue2 rounded-lg px-2.5 py-1.5 text-xs text-navy focus:border-steel outline-none resize-none"></textarea>
                 </div>
 
-                <div class="pt-3 border-t border-softBlue2 flex items-center justify-end gap-2 select-none">
+                <div class="pt-4 border-t border-softBlue2 flex items-center justify-end gap-2 select-none">
                     <button type="button" id="btn-modal-cancel" class="px-3 py-1.5 border border-softBlue2 text-steel rounded-lg text-xs font-semibold hover:text-navy hover:bg-lightGray transition-colors focus:outline-none">Cancel</button>
                     <button type="submit" id="btn-modal-save" class="px-3.5 py-1.5 bg-steel hover:bg-navy text-white rounded-lg text-xs font-bold transition-colors focus:outline-none">Save Securely</button>
                 </div>
@@ -297,6 +307,7 @@ export function createVaultModule() {
   const btnAddPassword = container.querySelector('#btn-add-password');
   const btnLockVault = container.querySelector('#btn-lock-vault');
   const btnChangePin = container.querySelector('#btn-change-pin');
+  const timerValue = container.querySelector('#vault-timer-value');
   
   const categoryTabs = container.querySelectorAll('.cat-tab');
   const emptyState = container.querySelector('#vault-empty-state');
@@ -418,23 +429,73 @@ export function createVaultModule() {
     dashboard.classList.remove('hidden');
     
     renderVaultItems();
+    startAutoLockTimer();
     window.dispatchEvent(new CustomEvent('vault-lock-state-changed'));
     window.removeEventListener('keydown', handleLockpadKeyboard);
   }
 
-  function lockVault() {
+  function lockVault(reason = 'manual') {
     isLocked = true;
     enteredPin = '';
     derivedKey = null;
     items = [];
+    stopAutoLockTimer();
     updatePinDots();
     
     lockScreen.classList.remove('opacity-0', 'pointer-events-none');
     dashboard.classList.add('hidden');
     
-    showToast('Safe-locked', 'info');
+    showToast(reason === 'timeout' ? 'Vault auto-locked after 5 minutes.' : 'Safe-locked', 'info');
     window.dispatchEvent(new CustomEvent('vault-lock-state-changed'));
     window.addEventListener('keydown', handleLockpadKeyboard);
+  }
+
+  function formatRemainingTime(ms) {
+    const totalSeconds = Math.max(0, Math.ceil(ms / 1000));
+    const minutes = String(Math.floor(totalSeconds / 60)).padStart(2, '0');
+    const seconds = String(totalSeconds % 60).padStart(2, '0');
+    return `${minutes}:${seconds}`;
+  }
+
+  function updateAutoLockTimerDisplay() {
+    if (!timerValue) return;
+    const remaining = autoLockDeadline ? Math.max(0, autoLockDeadline - Date.now()) : AUTO_LOCK_MS;
+    timerValue.textContent = formatRemainingTime(remaining);
+  }
+
+  function resetAutoLockTimer() {
+    if (isLocked) return;
+    autoLockDeadline = Date.now() + AUTO_LOCK_MS;
+    updateAutoLockTimerDisplay();
+  }
+
+  function stopAutoLockTimer() {
+    autoLockDeadline = null;
+    if (autoLockIntervalId) {
+      clearInterval(autoLockIntervalId);
+      autoLockIntervalId = null;
+    }
+    updateAutoLockTimerDisplay();
+  }
+
+  function startAutoLockTimer() {
+    resetAutoLockTimer();
+    if (autoLockIntervalId) {
+      clearInterval(autoLockIntervalId);
+    }
+    autoLockIntervalId = setInterval(() => {
+      if (isLocked || !autoLockDeadline) return;
+      const remaining = autoLockDeadline - Date.now();
+      if (remaining <= 0) {
+        lockVault('timeout');
+        return;
+      }
+      updateAutoLockTimerDisplay();
+    }, 1000);
+  }
+
+  function handleVaultActivity() {
+    resetAutoLockTimer();
   }
 
   function handleLockpadKeyboard(event) {
@@ -877,17 +938,25 @@ export function createVaultModule() {
   // Search Input
   searchInput.addEventListener('input', (e) => {
     searchQuery = e.target.value;
+    handleVaultActivity();
     renderVaultItems();
   });
 
   // Action Buttons
-  btnAddPassword.addEventListener('click', openAddModal);
-  btnLockVault.addEventListener('click', lockVault);
-  btnChangePin.addEventListener('click', openChangePinModal);
+  btnAddPassword.addEventListener('click', () => {
+    handleVaultActivity();
+    openAddModal();
+  });
+  btnLockVault.addEventListener('click', () => lockVault());
+  btnChangePin.addEventListener('click', () => {
+    handleVaultActivity();
+    openChangePinModal();
+  });
 
   // Category Tabs
   categoryTabs.forEach(tab => {
     tab.addEventListener('click', () => {
+      handleVaultActivity();
       activeCategory = tab.getAttribute('data-cat');
       
       categoryTabs.forEach(t => {
@@ -903,6 +972,7 @@ export function createVaultModule() {
   credentialGrid.addEventListener('click', (event) => {
     const btn = event.target.closest('[data-action]');
     if (!btn) return;
+    handleVaultActivity();
     const action = btn.getAttribute('data-action');
     const id = btn.getAttribute('data-id');
     const val = btn.getAttribute('data-value');
@@ -928,11 +998,20 @@ export function createVaultModule() {
   credentialForm.addEventListener('submit', handleFormSubmit);
   btnGeneratePassword.addEventListener('click', fillFormPasswordWithGenerator);
   btnToggleFormPw.addEventListener('click', toggleFormPasswordVisibility);
+  modalBackdrop.addEventListener('click', (event) => {
+    if (event.target === modalBackdrop) closeModal(modalBackdrop, modalContent);
+  });
 
   // PIN Change Modal Controls
   btnPinModalClose.addEventListener('click', () => closeModal(pinModalBackdrop, pinModalContent));
   btnPinModalCancel.addEventListener('click', () => closeModal(pinModalBackdrop, pinModalContent));
   pinChangeForm.addEventListener('submit', handlePinChangeSubmit);
+  pinModalBackdrop.addEventListener('click', (event) => {
+    if (event.target === pinModalBackdrop) closeModal(pinModalBackdrop, pinModalContent);
+  });
+
+  container.addEventListener('pointerdown', handleVaultActivity);
+  container.addEventListener('keydown', handleVaultActivity, true);
 
   // Simple toast trigger
   function showToast(message, type = 'success') {
@@ -995,6 +1074,9 @@ export function createVaultModule() {
     element: container,
     isUnlocked: () => !isLocked,
     destroy: () => {
+      stopAutoLockTimer();
+      container.removeEventListener('pointerdown', handleVaultActivity);
+      container.removeEventListener('keydown', handleVaultActivity, true);
       window.removeEventListener('keydown', handleLockpadKeyboard);
     }
   };
