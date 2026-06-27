@@ -418,6 +418,7 @@ export function createVaultModule() {
     dashboard.classList.remove('hidden');
     
     renderVaultItems();
+    window.dispatchEvent(new CustomEvent('vault-lock-state-changed'));
     window.removeEventListener('keydown', handleLockpadKeyboard);
   }
 
@@ -432,6 +433,7 @@ export function createVaultModule() {
     dashboard.classList.add('hidden');
     
     showToast('Safe-locked', 'info');
+    window.dispatchEvent(new CustomEvent('vault-lock-state-changed'));
     window.addEventListener('keydown', handleLockpadKeyboard);
   }
 
@@ -991,6 +993,7 @@ export function createVaultModule() {
   // Return DOM node + teardown method to avoid listener leaks
   return {
     element: container,
+    isUnlocked: () => !isLocked,
     destroy: () => {
       window.removeEventListener('keydown', handleLockpadKeyboard);
     }

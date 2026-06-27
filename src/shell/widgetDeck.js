@@ -44,7 +44,7 @@ function applyFaviconToImg(imgEl, cacheKey, url, altFaviconDomain = '') {
 
 export function createWidgetDeck() {
   const aside = document.createElement('aside');
-  aside.className = 'w-72 bg-navy border-l border-steel/40 flex flex-col relative flex-shrink-0 text-white select-none';
+  aside.className = 'shell-widget-deck w-[23rem] bg-[linear-gradient(180deg,#13243f_0%,#0d1c33_100%)] border-l border-[#203756] flex flex-col relative flex-shrink-0 text-white select-none shadow-[inset_1px_0_0_rgba(255,255,255,0.03)]';
   const LINKS_KEY = 'lo_command_workspace_links';
 
   // State: active widgets — persisted to localStorage so state survives tab switches and page refreshes
@@ -248,21 +248,22 @@ export function createWidgetDeck() {
   // Base shell structure for the widget deck
   aside.innerHTML = `
     <!-- Right Pane Controls Header -->
-    <div class="p-3.5 border-b border-steel/20 flex items-center justify-between bg-navy z-10 select-none flex-shrink-0">
+    <div class="px-4 py-5 border-b border-white/6 flex items-center justify-between z-10 select-none flex-shrink-0">
         <div class="flex flex-col">
-            <span class="text-[9px] font-bold text-softBlue2 uppercase tracking-widest opacity-70">Workspace Deck</span>
-            <span class="text-xs font-semibold text-white">Interactive Utility Deck</span>
+            <span class="text-[0.72rem] font-bold text-softBlue2 uppercase tracking-[0.22em] opacity-70">Utility Deck</span>
+            <span class="mt-1 text-[1.05rem] font-semibold tracking-[-0.02em] text-white">Interactive Utility Deck</span>
         </div>
 
         <!-- Add Button and Dropdown Anchor -->
         <div class="relative">
-            <button id="add-widget-btn" class="p-1.5 rounded bg-steel/30 border border-steel/50 hover:bg-steel/50 hover:border-gold text-white transition flex items-center justify-center focus:outline-none" title="Add Widget">
-                <i class="fa-solid fa-plus text-xs"></i>
+            <button id="add-widget-btn" class="inline-flex h-11 items-center gap-2 rounded-xl border border-[#314c72] bg-white/[0.05] px-4 text-sm font-semibold text-white shadow-[inset_0_1px_0_rgba(255,255,255,0.05)] transition hover:border-[#4a698f] hover:bg-white/[0.08] focus:outline-none" title="Add Widget">
+                <i class="fa-solid fa-plus text-sm"></i>
+                <span>Add Widget</span>
             </button>
 
             <!-- Add Widget Dropdown Options (Initially Hidden) -->
-            <div id="widget-dropdown" class="hidden absolute right-0 mt-2 w-52 bg-navy border border-steel/60 rounded-lg shadow-xl z-50 overflow-hidden divide-y divide-steel/30">
-                <div class="px-3 py-1.5 bg-steel/30 text-[9px] font-bold text-softBlue2 uppercase tracking-wider">
+            <div id="widget-dropdown" class="hidden absolute right-0 mt-3 w-56 bg-[#122540] border border-[#274264] rounded-2xl shadow-[0_20px_50px_rgba(0,0,0,0.32)] z-50 overflow-hidden divide-y divide-white/8">
+                <div class="px-4 py-2.5 bg-white/[0.04] text-[10px] font-bold text-softBlue2 uppercase tracking-[0.16em]">
                     Insert Module
                 </div>
                 <div id="dropdown-options-list">
@@ -273,14 +274,14 @@ export function createWidgetDeck() {
     </div>
 
     <!-- Widget Area (Handles dynamic proportional scaling and independent scroll) -->
-    <div id="widgets-container" class="flex-1 flex flex-col overflow-hidden divide-y divide-steel/20 bg-navy relative">
+    <div id="widgets-container" class="flex-1 flex flex-col overflow-hidden px-4 py-4 gap-3 bg-transparent relative">
         <!-- Fallback view when no widgets exist -->
         <div id="empty-state" class="absolute inset-0 flex flex-col items-center justify-center p-6 text-center select-none">
-            <div class="h-10 w-10 rounded-full border border-dashed border-steel/60 flex items-center justify-center mb-3 opacity-60">
+            <div class="h-12 w-12 rounded-full border border-dashed border-steel/60 flex items-center justify-center mb-4 opacity-60">
                 <i class="fa-solid fa-layer-group text-softBlue2 text-sm"></i>
             </div>
-            <h3 class="text-xs font-bold text-white mb-1">Deck is Empty</h3>
-            <p class="text-[10px] text-slate-400 max-w-xs leading-relaxed">
+            <h3 class="text-sm font-bold text-white mb-1">Deck is Empty</h3>
+            <p class="text-xs text-slate-400 max-w-xs leading-relaxed">
                 Customize your panel layout by selecting active trackers from the menu above.
             </p>
             <div class="absolute top-4 right-10 animate-bounce text-gold">
@@ -329,17 +330,17 @@ export function createWidgetDeck() {
     activeWidgets.forEach(widgetId => {
       const def = widgetDefinitions[widgetId];
       const element = document.createElement('div');
-      element.className = 'widget-wrapper flex-1 min-h-0 flex flex-col p-3.5 bg-navy';
+      element.className = 'widget-wrapper flex-1 min-h-0 flex flex-col rounded-[1.35rem] border border-[#284262] bg-[linear-gradient(180deg,rgba(20,39,67,0.95)_0%,rgba(14,29,51,0.98)_100%)] p-3.5 shadow-[inset_0_1px_0_rgba(255,255,255,0.04),0_14px_28px_rgba(0,0,0,0.16)]';
       
       element.innerHTML = `
         <!-- Compact Header -->
-        <div class="flex items-center justify-between mb-2 flex-shrink-0 pb-1 border-b border-steel/20 select-none">
-            <span class="text-[9px] font-bold uppercase tracking-wider text-softBlue2 flex items-center">
+        <div class="flex items-center justify-between mb-3 flex-shrink-0 pb-2 border-b border-white/8 select-none">
+            <span class="text-[0.72rem] font-bold uppercase tracking-[0.16em] text-white/95 flex items-center">
                 <i class="${def.iconClass}"></i>
                 ${def.title}
             </span>
             
-            <button class="remove-widget-btn p-0.5 hover:bg-steel/40 rounded text-slate-400 hover:text-gold transition flex items-center justify-center focus:outline-none" title="Remove Module">
+            <button class="remove-widget-btn h-7 w-7 hover:bg-white/[0.06] rounded-lg text-slate-400 hover:text-gold transition flex items-center justify-center focus:outline-none" title="Remove Module">
                 <i class="fa-solid fa-xmark text-[11px] font-bold"></i>
             </button>
         </div>
@@ -391,11 +392,11 @@ export function createWidgetDeck() {
     const available = Object.keys(widgetDefinitions).filter(id => !activeWidgets.includes(id));
     if (available.length === 0) {
       addBtn.disabled = true;
-      addBtn.className = "p-1.5 rounded bg-steel/10 border border-steel/20 text-slate-500 cursor-not-allowed flex items-center justify-center";
+      addBtn.className = "inline-flex h-11 items-center gap-2 rounded-xl border border-white/6 bg-white/[0.03] px-4 text-sm font-semibold text-slate-500 cursor-not-allowed";
       addBtn.title = "All items active";
     } else {
       addBtn.disabled = false;
-      addBtn.className = "p-1.5 rounded bg-steel/30 border border-steel/50 hover:bg-steel/50 hover:border-gold text-white transition flex items-center justify-center focus:outline-none";
+      addBtn.className = "inline-flex h-11 items-center gap-2 rounded-xl border border-[#314c72] bg-white/[0.05] px-4 text-sm font-semibold text-white shadow-[inset_0_1px_0_rgba(255,255,255,0.05)] transition hover:border-[#4a698f] hover:bg-white/[0.08] focus:outline-none";
       addBtn.title = "Add Module";
     }
 
@@ -404,7 +405,7 @@ export function createWidgetDeck() {
       const def = widgetDefinitions[id];
       const optBtn = document.createElement('button');
       optBtn.type = 'button';
-      optBtn.className = 'w-full text-left px-3.5 py-2 text-xs text-slate-200 hover:bg-steel/30 transition flex items-center justify-between group focus:outline-none';
+      optBtn.className = 'w-full text-left px-4 py-3 text-xs text-slate-200 hover:bg-white/[0.05] transition flex items-center justify-between group focus:outline-none';
       optBtn.innerHTML = `
         <span class="flex items-center text-[11px]">
             <i class="${def.iconClass}"></i>

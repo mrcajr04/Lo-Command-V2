@@ -18,6 +18,20 @@
     background-color: rgba(201, 160, 44, 0.6);
 }
 
+.shell-header {
+    background:
+        radial-gradient(circle at 18% 0%, rgba(58, 87, 128, 0.22), transparent 28%),
+        radial-gradient(circle at 78% 100%, rgba(37, 69, 109, 0.22), transparent 32%),
+        linear-gradient(180deg, #0f1d36 0%, #132644 58%, #10213d 100%);
+}
+
+.shell-sidebar,
+.shell-widget-deck {
+    background:
+        radial-gradient(circle at top, rgba(50, 83, 127, 0.18), transparent 26%),
+        linear-gradient(180deg, #13243f 0%, #0d1c33 100%);
+}
+
 /* Lock screen shake animation for error feedback */
 @keyframes shake {
     0%, 100% { transform: translateX(0); }
@@ -27,4 +41,3 @@
 .animate-shake {
     animation: shake 0.3s ease-in-out;
 }
-

@@ -31,6 +31,7 @@ const globalSearchPanel = header.querySelector('#global-search-panel');
 const globalSearchResults = header.querySelector('#global-search-results');
 const globalSearchEmpty = header.querySelector('#global-search-empty');
 const headerSettingsBtn = header.querySelector('#header-settings-btn');
+const defaultGlobalSearchPlaceholder = globalSearchInput?.getAttribute('placeholder') || 'Search contacts, modules, and actions';
 const WORKSPACE_LINKS_KEY = 'lo_command_workspace_links';
 const DEFAULT_WORKSPACE_LINKS = [
   { id: 'lnk-1', name: 'Microsoft Teams', url: 'https://teams.microsoft.com', category: 'communications', altFaviconDomain: '', bookmarked: true },
@@ -147,10 +148,33 @@ function applyFaviconToImage(imgEl, url, altFaviconDomain = '', cacheKey = null)
 }
 
 function focusUniversalSearch() {
+  if (isUniversalSearchDisabled()) return;
   if (!globalSearchInput) return;
   openUniversalSearch();
   globalSearchInput.focus();
   globalSearchInput.select();
+}
+
+function isUniversalSearchDisabled() {
+  return activeTab === 'vault' && typeof activeModule?.isUnlocked === 'function' && !activeModule.isUnlocked();
+}
+
+function updateGlobalSearchAvailability() {
+  const isDisabled = isUniversalSearchDisabled();
+  if (!globalSearchInput || !globalSearchShell) return;
+
+  globalSearchInput.disabled = isDisabled;
+  globalSearchInput.value = isDisabled ? '' : globalSearchInput.value;
+  globalSearchInput.setAttribute(
+    'placeholder',
+    isDisabled ? 'Unlock the vault to use universal search' : defaultGlobalSearchPlaceholder
+  );
+  globalSearchShell.classList.toggle('opacity-60', isDisabled);
+  globalSearchShell.classList.toggle('pointer-events-none', isDisabled);
+  globalSearchShell.classList.toggle('select-none', isDisabled);
+  if (isDisabled) {
+    closeUniversalSearch(true);
+  }
 }
 
 // Create workspace layout wrapper
@@ -498,6 +522,7 @@ function renderCanvas() {
     const contacts = createContactsModule(() => activateTab(null));
     activeModule = contacts;
     canvas.appendChild(contacts.element);
+    updateGlobalSearchAvailability();
     return;
   }
 
@@ -511,6 +536,7 @@ function renderCanvas() {
     const vault = createVaultModule();
     activeModule = vault;
     canvas.appendChild(vault.element);
+    updateGlobalSearchAvailability();
     return;
   }
 
@@ -583,6 +609,7 @@ function renderCanvas() {
     if (activeSettingsSection === 'links') {
       setupLinksManager();
     }
+    updateGlobalSearchAvailability();
     return;
   }
 
@@ -644,6 +671,8 @@ function renderCanvas() {
       </div>
     `;
   }
+
+  updateGlobalSearchAvailability();
 }
 
 function getUniversalSearchItems() {
@@ -848,6 +877,11 @@ function renderUniversalSearchResults() {
 }
 
 function updateUniversalSearchResults() {
+  if (isUniversalSearchDisabled()) {
+    universalResults = [];
+    renderUniversalSearchResults();
+    return;
+  }
   universalResults = filterUniversalSearchItems(globalSearchInput.value);
   if (universalActiveIndex >= universalResults.length) {
     universalActiveIndex = 0;
@@ -856,6 +890,7 @@ function updateUniversalSearchResults() {
 }
 
 function openUniversalSearch() {
+  if (isUniversalSearchDisabled()) return;
   universalSearchOpen = true;
   globalSearchPanel.classList.remove('hidden');
   updateUniversalSearchResults();
@@ -892,10 +927,15 @@ headerSettingsBtn?.addEventListener('click', () => activateTab('settings'));
 globalSearchInput.addEventListener('focus', openUniversalSearch);
 globalSearchInput.addEventListener('click', openUniversalSearch);
 globalSearchInput.addEventListener('input', () => {
+  if (isUniversalSearchDisabled()) return;
   universalActiveIndex = 0;
   updateUniversalSearchResults();
 });
 globalSearchInput.addEventListener('keydown', (event) => {
+  if (isUniversalSearchDisabled()) {
+    event.preventDefault();
+    return;
+  }
   if (!universalSearchOpen && ['ArrowDown', 'ArrowUp', 'Enter'].includes(event.key)) {
     openUniversalSearch();
   }
@@ -959,6 +999,8 @@ document.addEventListener('keydown', (event) => {
     closeUniversalSearch(true);
   }
 });
+
+window.addEventListener('vault-lock-state-changed', updateGlobalSearchAvailability);
 
 // Initial Lucide setup
 if (window.lucide) {
