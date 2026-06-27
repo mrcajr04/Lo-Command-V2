@@ -7,6 +7,9 @@ import { createContactsModule } from './contacts/contacts.js';
 import { initializeIfEmpty, loadContacts, exportToJSON } from './contacts/storage.js';
 import { getItem, setItem } from './shared/storage.js';
 
+// Favicon URL cache — keyed by link ID, stores the first candidate URL that loaded successfully
+const faviconCache = new Map();
+
 // Application State
 let activeTab = null; // null represents the default "Central Application Canvas" empty state
 let activeModule = null; // tracks mounted module instance for cleanup
@@ -112,8 +115,12 @@ function getFallbackFaviconDataUri() {
   `);
 }
 
-function applyFaviconToImage(imgEl, url, altFaviconDomain = '') {
+function applyFaviconToImage(imgEl, url, altFaviconDomain = '', cacheKey = null) {
   if (!imgEl) return;
+  if (cacheKey && faviconCache.has(cacheKey)) {
+    imgEl.src = faviconCache.get(cacheKey);
+    return;
+  }
   const candidates = getLinkFaviconCandidates(url, altFaviconDomain);
   const fallbackSrc = getFallbackFaviconDataUri();
 
@@ -131,6 +138,10 @@ function applyFaviconToImage(imgEl, url, altFaviconDomain = '') {
     }
     imgEl.onerror = null;
     imgEl.src = fallbackSrc;
+  };
+  imgEl.onload = () => {
+    if (cacheKey) faviconCache.set(cacheKey, imgEl.src);
+    imgEl.onload = null;
   };
   imgEl.src = candidates[candidateIndex];
 }
@@ -339,7 +350,7 @@ function setupLinksManager() {
           <i class="${link.bookmarked ? 'fa-solid' : 'fa-regular'} fa-bookmark text-xs"></i>
         </button>
         <div class="flex h-8 w-8 items-center justify-center rounded-lg border border-softBlue2 bg-white shadow-sm">
-          <img data-favicon-url="${escapeHTML(link.url)}" data-alt-favicon-domain="${escapeHTML(link.altFaviconDomain || '')}" alt="" class="h-5 w-5 rounded-sm object-contain">
+          <img data-link-id="${escapeHTML(link.id)}" data-favicon-url="${escapeHTML(link.url)}" data-alt-favicon-domain="${escapeHTML(link.altFaviconDomain || '')}" alt="" class="h-5 w-5 rounded-sm object-contain">
         </div>
         <div class="min-w-0 flex-1">
           <div class="text-sm font-bold text-navy truncate">${escapeHTML(link.name)}</div>
@@ -365,7 +376,8 @@ function setupLinksManager() {
       applyFaviconToImage(
         imgEl,
         imgEl.getAttribute('data-favicon-url') || '',
-        imgEl.getAttribute('data-alt-favicon-domain') || ''
+        imgEl.getAttribute('data-alt-favicon-domain') || '',
+        imgEl.getAttribute('data-link-id') || null
       );
     });
   }
@@ -392,6 +404,7 @@ function setupLinksManager() {
       const index = links.findIndex((link) => link.id === editingLinkId);
       if (index !== -1) {
         links[index] = { ...links[index], name, url, category, altFaviconDomain };
+        faviconCache.delete(editingLinkId);
       }
     } else {
       links.unshift({ id: `lnk-${Date.now()}`, name, url, category, altFaviconDomain });
@@ -503,7 +516,7 @@ function renderCanvas() {
 
   if (activeTab === 'settings') {
     sidebar.classList.add('hidden');
-    widgetDeck.classList.add('hidden');
+    widgetDeck.classList.remove('hidden');
     canvas.className = 'flex-1 overflow-y-auto flex flex-col relative bg-[#f4f7fb]';
     canvas.innerHTML = `
       <div class="flex min-h-full">

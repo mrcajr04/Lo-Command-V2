@@ -2,6 +2,46 @@
  * Shell Widget Deck Component
  * Self-contained module managing the right utility drawer.
  */
+
+const faviconCache = new Map();
+
+function getFaviconCandidates(url, altFaviconDomain = '') {
+  function fromDomain(value) {
+    if (!value) return [];
+    const normalized = /^https?:\/\//i.test(value) ? value : `https://${value}`;
+    try {
+      const { origin, hostname } = new URL(normalized);
+      return [
+        `${origin}/favicon.ico`,
+        `${origin}/apple-touch-icon.png`,
+        `https://icons.duckduckgo.com/ip3/${hostname}.ico`,
+      ];
+    } catch { return []; }
+  }
+  return [...fromDomain(altFaviconDomain), ...fromDomain(url)];
+}
+
+function applyFaviconToImg(imgEl, cacheKey, url, altFaviconDomain = '') {
+  if (faviconCache.has(cacheKey)) {
+    imgEl.src = faviconCache.get(cacheKey);
+    return;
+  }
+  const candidates = getFaviconCandidates(url, altFaviconDomain);
+  if (!candidates.length) { imgEl.style.display = 'none'; return; }
+  let i = 0;
+  imgEl.onerror = () => {
+    i++;
+    if (i < candidates.length) { imgEl.src = candidates[i]; return; }
+    imgEl.onerror = null;
+    imgEl.style.display = 'none';
+  };
+  imgEl.onload = () => {
+    faviconCache.set(cacheKey, imgEl.src);
+    imgEl.onload = null;
+  };
+  imgEl.src = candidates[0];
+}
+
 export function createWidgetDeck() {
   const aside = document.createElement('aside');
   aside.className = 'w-72 bg-navy border-l border-steel/40 flex flex-col relative flex-shrink-0 text-white select-none';
@@ -40,13 +80,13 @@ export function createWidgetDeck() {
     }
   }
 
-  function getLinkIcon(url, altFaviconDomain = '') {
-    const source = altFaviconDomain || url;
+  function loadAllLinks() {
     try {
-      const parsed = new URL(normalizeUrl(source));
-      return `https://icons.duckduckgo.com/ip3/${parsed.hostname}.ico`;
+      const saved = localStorage.getItem(LINKS_KEY);
+      const parsed = saved ? JSON.parse(saved) : [];
+      return Array.isArray(parsed) ? parsed : [];
     } catch {
-      return '';
+      return [];
     }
   }
 
@@ -97,14 +137,61 @@ export function createWidgetDeck() {
           <div class="flex flex-wrap gap-1.5 py-1.5">
             ${links.length === 0 ? `<span class="text-[10px] text-slate-400">No bookmarked links yet.</span>` : links.map(l => `
               <a href="${normalizeUrl(l.url)}" target="_blank" rel="noreferrer" class="inline-flex items-center gap-1.5 px-2.5 py-1 bg-steel/35 hover:bg-steel/60 border border-steel/50 rounded-full text-[10px] text-slate-200 transition duration-150">
-                <span class="h-4 w-4 rounded-full bg-white flex items-center justify-center overflow-hidden flex-shrink-0">
-                  <img src="${getLinkIcon(l.url, l.altFaviconDomain)}" alt="" class="h-3.5 w-3.5 object-contain" onerror="this.style.display='none'">
+                <span class="h-4 w-4 flex items-center justify-center overflow-hidden flex-shrink-0">
+                  <img data-link-id="${l.id}" data-favicon-url="${l.url}" data-alt-favicon-domain="${l.altFaviconDomain || ''}" alt="" class="h-4 w-4 object-fill">
                 </span>
                 <span class="font-medium max-w-[110px] truncate">${l.name}</span>
               </a>
             `).join('')}
           </div>
         `;
+      }
+    },
+    allLinks: {
+      id: 'allLinks',
+      title: 'Links',
+      iconClass: 'fa-solid fa-link text-gold text-xs mr-1.5',
+      render: () => {
+        const links = loadAllLinks();
+        if (links.length === 0) {
+          return `<div class="py-1.5"><span class="text-[10px] text-slate-400">No links yet.</span></div>`;
+        }
+
+        const CATEGORY_LABELS = {
+          'communications': { label: 'Communications', icon: 'fa-solid fa-bell' },
+          'mlg-platforms':  { label: 'MLG Platforms',  icon: 'fa-solid fa-globe' },
+          'mortgage-tech':  { label: 'Mortgage Tech',  icon: 'fa-solid fa-sack-dollar' },
+          'productivity':   { label: 'Productivity',   icon: 'fa-solid fa-building' },
+          'lender-portals': { label: 'Lender Portals', icon: 'fa-solid fa-building-columns' },
+        };
+
+        const groups = new Map();
+        links.forEach(l => {
+          const key = l.category || 'other';
+          if (!groups.has(key)) groups.set(key, []);
+          groups.get(key).push(l);
+        });
+
+        const sections = [...groups.entries()].map(([key, items], idx) => {
+          const meta = CATEGORY_LABELS[key] || { label: key.replace(/-/g, ' ').replace(/\b\w/g, c => c.toUpperCase()), icon: 'fa-solid fa-link' };
+          const { label, icon } = meta;
+          const pills = items.map(l => `
+            <a href="${normalizeUrl(l.url)}" target="_blank" rel="noreferrer" class="inline-flex items-center gap-1.5 px-2.5 py-1 bg-steel/35 hover:bg-steel/60 border border-steel/50 rounded-full text-[10px] text-slate-200 transition duration-150">
+              <span class="h-4 w-4 flex items-center justify-center overflow-hidden flex-shrink-0">
+                <img data-link-id="${l.id}" data-favicon-url="${l.url}" data-alt-favicon-domain="${l.altFaviconDomain || ''}" alt="" class="h-4 w-4 object-fill">
+              </span>
+              <span class="font-medium max-w-[110px] truncate">${l.name}</span>
+            </a>
+          `).join('');
+
+          return `
+            ${idx > 0 ? '<div class="border-t border-steel/20 mt-2.5 mb-2"></div>' : ''}
+            <p class="text-[9px] font-bold uppercase tracking-widest text-softBlue2 opacity-70 mb-1.5 flex items-center gap-1.5"><i class="${icon}"></i>${label}</p>
+            <div class="flex flex-wrap gap-1.5">${pills}</div>
+          `;
+        });
+
+        return `<div class="py-1.5">${sections.join('')}</div>`;
       }
     },
     tasks: {
@@ -275,6 +362,11 @@ export function createWidgetDeck() {
         const contentArea = element.querySelector('.widget-content');
         bindTaskListeners(contentArea, def);
       }
+
+      // Apply favicons for link widgets
+      element.querySelectorAll('[data-favicon-url]').forEach(img => {
+        applyFaviconToImg(img, img.dataset.linkId, img.dataset.faviconUrl, img.dataset.altFaviconDomain || '');
+      });
 
       widgetsContainer.appendChild(element);
     });
