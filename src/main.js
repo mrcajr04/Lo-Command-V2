@@ -4,7 +4,7 @@ import { createSidebar } from './shell/sidebar.js';
 import { createWidgetDeck } from './shell/widgetDeck.js';
 import { createVaultModule } from './vault/vault.js';
 import { createContactsModule } from './contacts/contacts.js';
-import { initializeIfEmpty, loadContacts, exportToJSON } from './contacts/storage.js';
+import { initializeIfEmpty, loadContacts, saveContacts, exportToJSON, importFromJSON, migrateContacts } from './contacts/storage.js';
 import { getItem, setItem } from './shared/storage.js';
 
 // Favicon URL cache — keyed by link ID, stores the first candidate URL that loaded successfully
@@ -19,12 +19,23 @@ let universalSearchOpen = false;
 let activeSettingsSection = 'account';
 let activeLinksCategory = 'communications';
 let sidebarCollapsed = getItem('lo_command_sidebar_collapsed', false);
+const WORKSPACE_PROFILE_KEY = 'lo_command_workspace_profile';
 
 const app = document.getElementById('app');
+const DEFAULT_WORKSPACE_PROFILE = {
+  companyName: 'LO COMMAND',
+  companySubtitle: 'MLO Command Center',
+  nmlsNumber: '',
+  companyLogo: '',
+  fullName: 'Arthur M.',
+  roleTitle: 'Underwriter',
+  profilePhoto: '',
+};
 
 // Create static components
 initializeIfEmpty();
 const header = createHeader();
+applyHeaderProfile();
 const widgetDeck = createWidgetDeck();
 const globalSearchShell = header.querySelector('#global-search-shell');
 const globalSearchInput = header.querySelector('#global-search');
@@ -32,6 +43,8 @@ const globalSearchPanel = header.querySelector('#global-search-panel');
 const globalSearchResults = header.querySelector('#global-search-results');
 const globalSearchEmpty = header.querySelector('#global-search-empty');
 const headerSettingsBtn = header.querySelector('#header-settings-btn');
+const headerAccountTrigger = header.querySelector('#header-account-trigger');
+const headerAccountMenu = header.querySelector('#header-account-menu');
 const defaultGlobalSearchPlaceholder = globalSearchInput?.getAttribute('placeholder') || 'Search contacts, modules, and actions';
 const WORKSPACE_LINKS_KEY = 'lo_command_workspace_links';
 const DEFAULT_WORKSPACE_LINKS = [
@@ -66,6 +79,25 @@ function loadWorkspaceLinks() {
 
 function saveWorkspaceLinks(links) {
   setItem(WORKSPACE_LINKS_KEY, links);
+}
+
+function loadWorkspaceProfile() {
+  const saved = getItem(WORKSPACE_PROFILE_KEY, null);
+  const profile = { ...DEFAULT_WORKSPACE_PROFILE, ...(saved && typeof saved === 'object' ? saved : {}) };
+  if (profile.companySubtitle === 'Mortgage Loan Officer Command Center') {
+    profile.companySubtitle = DEFAULT_WORKSPACE_PROFILE.companySubtitle;
+  }
+  return profile;
+}
+
+function saveWorkspaceProfile(profile) {
+  setItem(WORKSPACE_PROFILE_KEY, profile);
+}
+
+function getInitials(value, fallback = 'M') {
+  const words = String(value || '').trim().split(/\s+/).filter(Boolean);
+  if (!words.length) return fallback;
+  return words.slice(0, 2).map((word) => word[0]?.toUpperCase() || '').join('') || fallback;
 }
 
 function normalizeLinkUrl(value) {
@@ -148,12 +180,72 @@ function applyFaviconToImage(imgEl, url, altFaviconDomain = '', cacheKey = null)
   imgEl.src = candidates[candidateIndex];
 }
 
+function applyHeaderProfile(profile = loadWorkspaceProfile()) {
+  const companyNameEl = header.querySelector('#header-company-name');
+  const companySubtitleEl = header.querySelector('#header-company-subtitle');
+  const brandInitialsEl = header.querySelector('#header-brand-initials');
+  const brandLogoEl = header.querySelector('#header-brand-logo');
+  const userNameEl = header.querySelector('#header-user-name');
+  const userRoleEl = header.querySelector('#header-user-role');
+  const userInitialsEl = header.querySelector('#header-user-initials');
+  const userPhotoEl = header.querySelector('#header-user-photo');
+
+  const companyName = profile.companyName?.trim() || DEFAULT_WORKSPACE_PROFILE.companyName;
+  const subtitleBase = profile.companySubtitle?.trim() || DEFAULT_WORKSPACE_PROFILE.companySubtitle;
+  const nmlsNumber = profile.nmlsNumber?.trim();
+  const fullName = profile.fullName?.trim() || DEFAULT_WORKSPACE_PROFILE.fullName;
+  const roleTitle = profile.roleTitle?.trim() || DEFAULT_WORKSPACE_PROFILE.roleTitle;
+
+  companyNameEl.textContent = companyName;
+  companySubtitleEl.textContent = nmlsNumber ? `${subtitleBase} | NMLS #${nmlsNumber}` : subtitleBase;
+  brandInitialsEl.textContent = getInitials(companyName, 'M');
+  userNameEl.textContent = fullName;
+  userRoleEl.textContent = roleTitle;
+  userInitialsEl.textContent = getInitials(fullName, 'AM');
+
+  if (profile.companyLogo) {
+    brandLogoEl.src = profile.companyLogo;
+    brandLogoEl.classList.remove('hidden');
+    brandInitialsEl.classList.add('hidden');
+  } else {
+    brandLogoEl.removeAttribute('src');
+    brandLogoEl.classList.add('hidden');
+    brandInitialsEl.classList.remove('hidden');
+  }
+
+  if (profile.profilePhoto) {
+    userPhotoEl.src = profile.profilePhoto;
+    userPhotoEl.classList.remove('hidden');
+    userInitialsEl.classList.add('hidden');
+  } else {
+    userPhotoEl.removeAttribute('src');
+    userPhotoEl.classList.add('hidden');
+    userInitialsEl.classList.remove('hidden');
+  }
+}
+
 function focusUniversalSearch() {
   if (isUniversalSearchDisabled()) return;
   if (!globalSearchInput) return;
   openUniversalSearch();
   globalSearchInput.focus();
   globalSearchInput.select();
+}
+
+function closeHeaderAccountMenu() {
+  headerAccountMenu?.classList.add('hidden');
+  headerAccountTrigger?.setAttribute('aria-expanded', 'false');
+}
+
+function openHeaderAccountMenu() {
+  headerAccountMenu?.classList.remove('hidden');
+  headerAccountTrigger?.setAttribute('aria-expanded', 'true');
+}
+
+function toggleHeaderAccountMenu() {
+  const isOpen = headerAccountMenu && !headerAccountMenu.classList.contains('hidden');
+  if (isOpen) closeHeaderAccountMenu();
+  else openHeaderAccountMenu();
 }
 
 function isUniversalSearchDisabled() {
@@ -177,6 +269,82 @@ function updateGlobalSearchAvailability() {
     closeUniversalSearch(true);
   }
 }
+
+function showBackdrop(backdrop, panel) {
+  backdrop.classList.remove('hidden');
+  requestAnimationFrame(() => {
+    backdrop.classList.remove('opacity-0');
+    panel.classList.remove('scale-95');
+  });
+}
+
+function hideBackdrop(backdrop, panel) {
+  backdrop.classList.add('opacity-0');
+  panel.classList.add('scale-95');
+  setTimeout(() => backdrop.classList.add('hidden'), 180);
+}
+
+const backupRestoreBackdrop = document.createElement('div');
+backupRestoreBackdrop.className = 'fixed inset-0 z-[120] hidden items-center justify-center bg-navy/60 p-4 opacity-0 backdrop-blur-sm transition-all duration-200';
+backupRestoreBackdrop.innerHTML = `
+  <div class="w-full max-w-lg rounded-[1.8rem] border border-softBlue2 bg-white shadow-[0_30px_80px_rgba(15,23,42,0.25)] transform scale-95 transition-all duration-200">
+    <div class="flex items-center justify-between border-b border-softBlue1 px-6 py-5">
+      <div>
+        <p class="text-[11px] font-bold uppercase tracking-[0.18em] text-gold">Backup & Restore</p>
+        <h3 class="mt-1 text-2xl font-black tracking-tight text-navy">Contacts Backup Tools</h3>
+      </div>
+      <button type="button" id="backup-restore-close" class="flex h-10 w-10 items-center justify-center rounded-xl text-steel transition hover:bg-softBlue1 hover:text-navy focus:outline-none">
+        <i class="fa-solid fa-xmark text-sm"></i>
+      </button>
+    </div>
+    <div class="space-y-4 px-6 py-6">
+      <div class="rounded-[1.4rem] border border-softBlue2 bg-[#f8fbff] p-4">
+        <p class="text-sm font-bold text-navy">Export Backup</p>
+        <p class="mt-1 text-sm leading-6 text-steel">Download your contacts as a JSON backup file.</p>
+        <button type="button" id="backup-export-btn" class="mt-4 inline-flex items-center gap-2 rounded-2xl bg-navy px-4 py-2.5 text-sm font-bold text-white transition hover:bg-steel">
+          <i class="fa-solid fa-download text-xs"></i>
+          <span>Export Contacts Backup</span>
+        </button>
+      </div>
+      <div class="rounded-[1.4rem] border border-softBlue2 bg-[#f8fbff] p-4">
+        <p class="text-sm font-bold text-navy">Restore Backup</p>
+        <p class="mt-1 text-sm leading-6 text-steel">Restore contacts from a previous JSON backup file.</p>
+        <div class="mt-4 flex flex-wrap gap-2">
+          <label class="inline-flex cursor-pointer items-center gap-2 rounded-2xl border border-softBlue2 px-4 py-2.5 text-sm font-bold text-navy transition hover:bg-softBlue1">
+            <i class="fa-solid fa-upload text-xs"></i>
+            <span>Choose Backup File</span>
+            <input id="backup-restore-input" type="file" accept=".json,application/json" class="hidden">
+          </label>
+        </div>
+      </div>
+    </div>
+  </div>
+`;
+
+const logoutBackdrop = document.createElement('div');
+logoutBackdrop.className = 'fixed inset-0 z-[120] hidden items-center justify-center bg-navy/60 p-4 opacity-0 backdrop-blur-sm transition-all duration-200';
+logoutBackdrop.innerHTML = `
+  <div class="w-full max-w-md rounded-[1.8rem] border border-softBlue2 bg-white shadow-[0_30px_80px_rgba(15,23,42,0.25)] transform scale-95 transition-all duration-200">
+    <div class="px-7 py-7 text-center">
+      <div class="mx-auto flex h-14 w-14 items-center justify-center rounded-full border border-[#ffd4db] bg-[#fff4f6] text-[#f05f79]">
+        <i class="fa-solid fa-arrow-right-from-bracket text-lg"></i>
+      </div>
+      <h3 class="mt-5 text-[1.8rem] font-black tracking-tight text-navy">Logout</h3>
+      <p class="mt-3 text-sm leading-6 text-steel">You’ll exit the current workspace view and return to the main hub. Your saved data will stay intact.</p>
+      <div class="mt-7 flex items-center justify-center gap-3">
+        <button type="button" id="logout-cancel-btn" class="inline-flex min-w-[110px] items-center justify-center rounded-2xl border border-softBlue2 px-4 py-2.5 text-sm font-bold text-navy transition hover:bg-softBlue1">
+          Cancel
+        </button>
+        <button type="button" id="logout-confirm-btn" class="inline-flex min-w-[110px] items-center justify-center rounded-2xl bg-navy px-4 py-2.5 text-sm font-bold text-white transition hover:bg-steel">
+          Logout
+        </button>
+      </div>
+    </div>
+  </div>
+`;
+
+app.appendChild(backupRestoreBackdrop);
+app.appendChild(logoutBackdrop);
 
 // Create workspace layout wrapper
 const workspace = document.createElement('div');
@@ -290,48 +458,150 @@ function getSettingsContentMarkup() {
     `;
   }
 
-  return `
-    <div class="max-w-5xl">
-      <h1 class="text-4xl font-black tracking-tight text-navy">Account</h1>
-      <p class="mt-2 text-base text-steel">Review profile details and backup access.</p>
+  const profile = loadWorkspaceProfile();
+  const previewSubtitle = profile.companySubtitle?.trim() || DEFAULT_WORKSPACE_PROFILE.companySubtitle;
+  const previewNmls = profile.nmlsNumber?.trim();
 
-      <div class="mt-8 grid grid-cols-1 xl:grid-cols-2 gap-6">
+  return `
+    <div class="max-w-6xl">
+      <div class="flex flex-col gap-4 xl:flex-row xl:items-start xl:justify-between">
+        <div>
+          <h1 class="text-4xl font-black tracking-tight text-navy">Account</h1>
+          <p class="mt-2 text-base text-steel">Set up your personal profile and workspace branding.</p>
+        </div>
+        <div class="flex items-center gap-3 xl:pt-3">
+          <button type="button" id="settings-account-reset" class="inline-flex items-center gap-2 rounded-2xl border border-softBlue2 px-5 py-3 text-sm font-bold text-navy hover:bg-softBlue1 transition">
+            <i class="fa-solid fa-rotate-left text-xs"></i>
+            <span>Reset</span>
+          </button>
+          <button type="button" id="settings-account-save" class="inline-flex items-center gap-2 rounded-2xl bg-navy px-5 py-3 text-sm font-bold text-white hover:bg-steel transition">
+            <i class="fa-solid fa-floppy-disk text-xs"></i>
+            <span>Save Changes</span>
+          </button>
+        </div>
+      </div>
+
+      <div class="mt-6 grid grid-cols-1 xl:grid-cols-[1.1fr_0.9fr] gap-6">
         <div class="rounded-3xl border border-softBlue2 bg-white p-6 shadow-sm">
           <div class="flex items-center gap-2 text-gold">
-            <i class="fa-regular fa-circle-check text-sm"></i>
-            <span class="text-[11px] font-bold uppercase tracking-[0.18em]">Workspace Identity</span>
+            <i class="fa-regular fa-user text-sm"></i>
+            <span class="text-[11px] font-bold uppercase tracking-[0.18em]">Personal Profile</span>
           </div>
-          <div class="mt-5 flex items-start gap-4">
-            <div class="h-12 w-12 rounded-2xl bg-gold text-navy flex items-center justify-center font-black text-lg">ML</div>
-            <div>
-              <h2 class="text-2xl font-bold text-navy leading-tight">Loan Officer Desk</h2>
-              <p class="mt-1 text-steel text-base">Apex Home Lending command center</p>
-              <p class="mt-4 max-w-md text-sm leading-6 text-steel">Use this area for your personal workspace profile, brand defaults, and future account-level preferences.</p>
+          <div class="mt-5 space-y-4">
+            <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <label class="block">
+                <span class="mb-2 block text-[11px] font-bold uppercase tracking-[0.18em] text-steel">Full Name</span>
+                <input id="settings-full-name" type="text" value="${escapeHTML(profile.fullName)}" class="w-full rounded-2xl border border-softBlue2 bg-[#f6f9fd] px-4 py-3 text-sm text-navy placeholder-slate-400 focus:outline-none focus:border-steel">
+              </label>
+              <label class="block">
+                <span class="mb-2 block text-[11px] font-bold uppercase tracking-[0.18em] text-steel">Role / Title</span>
+                <input id="settings-role-title" type="text" value="${escapeHTML(profile.roleTitle)}" placeholder="Mortgage Loan Originator" class="w-full rounded-2xl border border-softBlue2 bg-[#f6f9fd] px-4 py-3 text-sm text-navy placeholder-slate-400 focus:outline-none focus:border-steel">
+              </label>
+            </div>
+
+            <div class="rounded-[1.6rem] border border-softBlue2 bg-[#f8fbff] p-4">
+              <div class="flex items-center gap-4">
+                <div class="flex h-16 w-16 items-center justify-center overflow-hidden rounded-full border border-softBlue2 bg-navy text-lg font-bold text-white shadow-sm">
+                  ${profile.profilePhoto ? `<img id="settings-profile-photo-preview" src="${profile.profilePhoto}" alt="" class="h-full w-full object-cover">` : `<span id="settings-profile-photo-initials">${escapeHTML(getInitials(profile.fullName, 'AM'))}</span><img id="settings-profile-photo-preview" alt="" class="hidden h-full w-full object-cover">`}
+                </div>
+                <div class="flex-1">
+                  <p class="text-sm font-bold text-navy">Profile Photo</p>
+                  <p class="mt-1 text-xs leading-5 text-steel">Optional. If you skip this, the header avatar will display your initials.</p>
+                  <div class="mt-3 flex flex-wrap gap-2">
+                    <label class="inline-flex cursor-pointer items-center gap-2 rounded-2xl bg-navy px-4 py-2 text-xs font-bold text-white hover:bg-steel transition">
+                      <i class="fa-solid fa-upload text-[11px]"></i>
+                      <span>Upload Photo</span>
+                      <input id="settings-profile-photo-input" type="file" accept="image/*" class="hidden">
+                    </label>
+                    <button type="button" id="settings-profile-photo-remove" class="inline-flex items-center gap-2 rounded-2xl border border-softBlue2 px-4 py-2 text-xs font-bold text-navy hover:bg-softBlue1 transition ${profile.profilePhoto ? '' : 'hidden'}">
+                      <i class="fa-regular fa-trash-can text-[11px]"></i>
+                      <span>Remove</span>
+                    </button>
+                  </div>
+                </div>
+              </div>
             </div>
           </div>
         </div>
 
         <div class="rounded-3xl border border-softBlue2 bg-white p-6 shadow-sm">
           <div class="flex items-center gap-2 text-gold">
-            <i class="fa-solid fa-database text-sm"></i>
-            <span class="text-[11px] font-bold uppercase tracking-[0.18em]">Backup & Restore</span>
+            <i class="fa-regular fa-building text-sm"></i>
+            <span class="text-[11px] font-bold uppercase tracking-[0.18em]">Brand & Identity</span>
           </div>
-          <div class="mt-5">
-            <h2 class="text-2xl font-bold text-navy leading-tight">Workspace Backup Tools</h2>
-            <p class="mt-3 max-w-lg text-sm leading-6 text-steel">Export your workspace database or restore from a saved backup without leaving settings.</p>
-            <div class="mt-6 flex flex-wrap gap-3">
-              <button type="button" id="settings-export-contacts" class="inline-flex items-center gap-2 rounded-2xl bg-navy px-5 py-3 text-sm font-bold text-white hover:bg-steel transition">
-                <i class="fa-solid fa-download text-xs"></i>
-                <span>Export Contacts Backup</span>
-              </button>
-              <button type="button" id="settings-open-contacts" class="inline-flex items-center gap-2 rounded-2xl border border-softBlue2 px-5 py-3 text-sm font-bold text-navy hover:bg-softBlue1 transition">
-                <i class="fa-solid fa-users text-xs"></i>
-                <span>Open Contacts</span>
-              </button>
+          <div class="mt-5 space-y-4">
+            <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <label class="block md:col-span-2">
+                <span class="mb-2 block text-[11px] font-bold uppercase tracking-[0.18em] text-steel">Company Name</span>
+                <input id="settings-company-name" type="text" value="${escapeHTML(profile.companyName)}" class="w-full rounded-2xl border border-softBlue2 bg-[#f6f9fd] px-4 py-3 text-sm text-navy placeholder-slate-400 focus:outline-none focus:border-steel">
+              </label>
+              <label class="block">
+                <span class="mb-2 block text-[11px] font-bold uppercase tracking-[0.18em] text-steel">Workspace Subtitle</span>
+                <input id="settings-company-subtitle" type="text" value="${escapeHTML(profile.companySubtitle)}" placeholder="Financial Command Center" class="w-full rounded-2xl border border-softBlue2 bg-[#f6f9fd] px-4 py-3 text-sm text-navy placeholder-slate-400 focus:outline-none focus:border-steel">
+              </label>
+              <label class="block">
+                <span class="mb-2 block text-[11px] font-bold uppercase tracking-[0.18em] text-steel">NMLS Number</span>
+                <input id="settings-nmls-number" type="text" value="${escapeHTML(profile.nmlsNumber)}" placeholder="Optional" class="w-full rounded-2xl border border-softBlue2 bg-[#f6f9fd] px-4 py-3 text-sm text-navy placeholder-slate-400 focus:outline-none focus:border-steel">
+              </label>
+            </div>
+
+            <div class="rounded-[1.6rem] border border-softBlue2 bg-[#f8fbff] p-4">
+              <div class="flex items-center gap-4">
+                <div class="flex h-16 w-16 items-center justify-center overflow-hidden rounded-[1.1rem] border border-gold/60 bg-[radial-gradient(circle_at_30%_28%,#f4d777_0%,#cfa52e_42%,#8f6a14_100%)] text-lg font-black text-navy shadow-sm">
+                  ${profile.companyLogo ? `<img id="settings-company-logo-preview" src="${profile.companyLogo}" alt="" class="h-full w-full object-cover">` : `<span id="settings-company-logo-initials">${escapeHTML(getInitials(profile.companyName, 'M'))}</span><img id="settings-company-logo-preview" alt="" class="hidden h-full w-full object-cover">`}
+                </div>
+                <div class="flex-1">
+                  <p class="text-sm font-bold text-navy">Company Logo</p>
+                  <p class="mt-1 text-xs leading-5 text-steel">Optional. When added, this will replace the default badge in the header.</p>
+                  <div class="mt-3 flex flex-wrap gap-2">
+                    <label class="inline-flex cursor-pointer items-center gap-2 rounded-2xl bg-navy px-4 py-2 text-xs font-bold text-white hover:bg-steel transition">
+                      <i class="fa-solid fa-upload text-[11px]"></i>
+                      <span>Upload Logo</span>
+                      <input id="settings-company-logo-input" type="file" accept="image/*" class="hidden">
+                    </label>
+                    <button type="button" id="settings-company-logo-remove" class="inline-flex items-center gap-2 rounded-2xl border border-softBlue2 px-4 py-2 text-xs font-bold text-navy hover:bg-softBlue1 transition ${profile.companyLogo ? '' : 'hidden'}">
+                      <i class="fa-regular fa-trash-can text-[11px]"></i>
+                      <span>Remove</span>
+                    </button>
+                  </div>
+                </div>
+              </div>
             </div>
           </div>
         </div>
       </div>
+
+      <div class="mt-5">
+        <div class="rounded-3xl border border-softBlue2 bg-white p-6 shadow-sm">
+          <div class="flex items-center gap-2 text-gold">
+            <i class="fa-solid fa-window-maximize text-sm"></i>
+            <span class="text-[11px] font-bold uppercase tracking-[0.18em]">Header Preview</span>
+          </div>
+          <div class="mt-5 overflow-hidden rounded-[1.8rem] border border-[#294265] bg-[linear-gradient(180deg,#203f6d_0%,#183255_100%)] p-5 text-white shadow-[0_18px_38px_rgba(12,25,49,0.18)]">
+            <div class="flex items-center justify-between gap-4">
+              <div class="flex items-center gap-3 min-w-0">
+                <div class="flex h-14 w-14 items-center justify-center overflow-hidden rounded-[1rem] border border-gold/70 bg-[radial-gradient(circle_at_30%_28%,#f4d777_0%,#cfa52e_42%,#8f6a14_100%)] font-black text-xl text-navy flex-shrink-0">
+                  ${profile.companyLogo ? `<img id="settings-preview-company-logo" src="${profile.companyLogo}" alt="" class="h-full w-full object-cover">` : `<span id="settings-preview-company-initials">${escapeHTML(getInitials(profile.companyName, 'M'))}</span><img id="settings-preview-company-logo" alt="" class="hidden h-full w-full object-cover">`}
+                </div>
+                <div class="min-w-0">
+                  <p id="settings-preview-company-name" class="truncate text-2xl font-black tracking-tight">${escapeHTML(profile.companyName)}</p>
+                  <p id="settings-preview-company-subtitle" class="mt-1 truncate text-[11px] font-semibold uppercase tracking-[0.18em] text-softBlue2">${escapeHTML(previewNmls ? `${previewSubtitle} | NMLS #${previewNmls}` : previewSubtitle)}</p>
+                </div>
+              </div>
+              <div class="flex items-center gap-3 rounded-[1.2rem] border border-white/10 bg-white/[0.04] px-3 py-2.5">
+                <div class="flex h-11 w-11 items-center justify-center overflow-hidden rounded-full border border-gold bg-[linear-gradient(180deg,#395780_0%,#233b60_100%)] font-bold text-white flex-shrink-0">
+                  ${profile.profilePhoto ? `<img id="settings-preview-user-photo" src="${profile.profilePhoto}" alt="" class="h-full w-full object-cover">` : `<span id="settings-preview-user-initials">${escapeHTML(getInitials(profile.fullName, 'AM'))}</span><img id="settings-preview-user-photo" alt="" class="hidden h-full w-full object-cover">`}
+                </div>
+                <div class="hidden sm:block min-w-0">
+                  <p id="settings-preview-user-name" class="truncate text-sm font-bold">${escapeHTML(profile.fullName)}</p>
+                  <p id="settings-preview-user-role" class="mt-1 truncate text-[11px] text-softBlue2">${escapeHTML(profile.roleTitle)}</p>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
     </div>
   `;
 }
@@ -530,6 +800,135 @@ function setupLinksManager() {
   resetForm();
 }
 
+function setupAccountSettings() {
+  const fullNameEl = canvas.querySelector('#settings-full-name');
+  const roleTitleEl = canvas.querySelector('#settings-role-title');
+  const companyNameEl = canvas.querySelector('#settings-company-name');
+  const companySubtitleEl = canvas.querySelector('#settings-company-subtitle');
+  const nmlsNumberEl = canvas.querySelector('#settings-nmls-number');
+  const profilePhotoInput = canvas.querySelector('#settings-profile-photo-input');
+  const profilePhotoRemove = canvas.querySelector('#settings-profile-photo-remove');
+  const companyLogoInput = canvas.querySelector('#settings-company-logo-input');
+  const companyLogoRemove = canvas.querySelector('#settings-company-logo-remove');
+  const saveBtn = canvas.querySelector('#settings-account-save');
+  const resetBtn = canvas.querySelector('#settings-account-reset');
+
+  let draft = loadWorkspaceProfile();
+
+  function toggleImage(previewImg, initialsEl, removeBtn, value) {
+    if (previewImg) {
+      if (value) {
+        previewImg.src = value;
+        previewImg.classList.remove('hidden');
+      } else {
+        previewImg.removeAttribute('src');
+        previewImg.classList.add('hidden');
+      }
+    }
+    if (initialsEl) {
+      initialsEl.classList.toggle('hidden', Boolean(value));
+    }
+    if (removeBtn) {
+      removeBtn.classList.toggle('hidden', !value);
+    }
+  }
+
+  function refreshPreview() {
+    draft.fullName = fullNameEl.value;
+    draft.roleTitle = roleTitleEl.value;
+    draft.companyName = companyNameEl.value;
+    draft.companySubtitle = companySubtitleEl.value;
+    draft.nmlsNumber = nmlsNumberEl.value;
+
+    const previewCompanyName = canvas.querySelector('#settings-preview-company-name');
+    const previewCompanySubtitle = canvas.querySelector('#settings-preview-company-subtitle');
+    const previewUserName = canvas.querySelector('#settings-preview-user-name');
+    const previewUserRole = canvas.querySelector('#settings-preview-user-role');
+    const companyInitialsEls = [
+      canvas.querySelector('#settings-company-logo-initials'),
+      canvas.querySelector('#settings-preview-company-initials'),
+    ];
+    const userInitialsEls = [
+      canvas.querySelector('#settings-profile-photo-initials'),
+      canvas.querySelector('#settings-preview-user-initials'),
+    ];
+
+    const companyName = draft.companyName.trim() || DEFAULT_WORKSPACE_PROFILE.companyName;
+    const companySubtitle = draft.companySubtitle.trim() || DEFAULT_WORKSPACE_PROFILE.companySubtitle;
+    const nmls = draft.nmlsNumber.trim();
+    const fullName = draft.fullName.trim() || DEFAULT_WORKSPACE_PROFILE.fullName;
+    const roleTitle = draft.roleTitle.trim() || DEFAULT_WORKSPACE_PROFILE.roleTitle;
+
+    previewCompanyName.textContent = companyName;
+    previewCompanySubtitle.textContent = nmls ? `${companySubtitle} | NMLS #${nmls}` : companySubtitle;
+    previewUserName.textContent = fullName;
+    previewUserRole.textContent = roleTitle;
+
+    companyInitialsEls.forEach((el) => { if (el) el.textContent = getInitials(companyName, 'M'); });
+    userInitialsEls.forEach((el) => { if (el) el.textContent = getInitials(fullName, 'AM'); });
+
+    toggleImage(canvas.querySelector('#settings-company-logo-preview'), canvas.querySelector('#settings-company-logo-initials'), companyLogoRemove, draft.companyLogo);
+    toggleImage(canvas.querySelector('#settings-preview-company-logo'), canvas.querySelector('#settings-preview-company-initials'), null, draft.companyLogo);
+    toggleImage(canvas.querySelector('#settings-profile-photo-preview'), canvas.querySelector('#settings-profile-photo-initials'), profilePhotoRemove, draft.profilePhoto);
+    toggleImage(canvas.querySelector('#settings-preview-user-photo'), canvas.querySelector('#settings-preview-user-initials'), null, draft.profilePhoto);
+  }
+
+  function readImageFile(file, onLoad) {
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = () => onLoad(String(reader.result || ''));
+    reader.readAsDataURL(file);
+  }
+
+  [fullNameEl, roleTitleEl, companyNameEl, companySubtitleEl, nmlsNumberEl].forEach((input) => {
+    input?.addEventListener('input', refreshPreview);
+  });
+
+  profilePhotoInput?.addEventListener('change', (event) => {
+    readImageFile(event.target.files?.[0], (result) => {
+      draft.profilePhoto = result;
+      refreshPreview();
+    });
+    event.target.value = '';
+  });
+
+  companyLogoInput?.addEventListener('change', (event) => {
+    readImageFile(event.target.files?.[0], (result) => {
+      draft.companyLogo = result;
+      refreshPreview();
+    });
+    event.target.value = '';
+  });
+
+  profilePhotoRemove?.addEventListener('click', () => {
+    draft.profilePhoto = '';
+    refreshPreview();
+  });
+
+  companyLogoRemove?.addEventListener('click', () => {
+    draft.companyLogo = '';
+    refreshPreview();
+  });
+
+  saveBtn?.addEventListener('click', () => {
+    refreshPreview();
+    saveWorkspaceProfile(draft);
+    applyHeaderProfile(draft);
+  });
+
+  resetBtn?.addEventListener('click', () => {
+    draft = { ...DEFAULT_WORKSPACE_PROFILE };
+    fullNameEl.value = draft.fullName;
+    roleTitleEl.value = draft.roleTitle;
+    companyNameEl.value = draft.companyName;
+    companySubtitleEl.value = draft.companySubtitle;
+    nmlsNumberEl.value = draft.nmlsNumber;
+    refreshPreview();
+  });
+
+  refreshPreview();
+}
+
 // Canvas Content Renderer
 function renderCanvas() {
   // Tear down any previously mounted module
@@ -615,7 +1014,7 @@ function renderCanvas() {
             </div>
           </div>
 
-          <div class="px-10 py-8">
+          <div class="px-10 py-6">
             ${getSettingsContentMarkup()}
           </div>
         </section>
@@ -633,6 +1032,8 @@ function renderCanvas() {
     canvas.querySelector('#settings-open-contacts')?.addEventListener('click', () => activateTab('contacts'));
     if (activeSettingsSection === 'links') {
       setupLinksManager();
+    } else if (activeSettingsSection === 'account') {
+      setupAccountSettings();
     }
     updateGlobalSearchAvailability();
     return;
@@ -951,6 +1352,23 @@ app.appendChild(header);
 app.appendChild(workspace);
 
 headerSettingsBtn?.addEventListener('click', () => activateTab('settings'));
+headerAccountTrigger?.addEventListener('click', (event) => {
+  event.stopPropagation();
+  toggleHeaderAccountMenu();
+});
+
+headerAccountMenu?.addEventListener('click', (event) => {
+  const button = event.target.closest('[data-account-action]');
+  if (!button) return;
+  const action = button.getAttribute('data-account-action');
+  closeHeaderAccountMenu();
+  if (action === 'backup-restore') {
+    showBackdrop(backupRestoreBackdrop, backupRestoreBackdrop.firstElementChild);
+  }
+  if (action === 'logout') {
+    showBackdrop(logoutBackdrop, logoutBackdrop.firstElementChild);
+  }
+});
 
 globalSearchInput.addEventListener('focus', openUniversalSearch);
 globalSearchInput.addEventListener('click', openUniversalSearch);
@@ -1014,6 +1432,11 @@ document.addEventListener('click', (event) => {
   if (!globalSearchShell.contains(event.target)) {
     closeUniversalSearch(false);
   }
+  if (headerAccountMenu && !headerAccountMenu.classList.contains('hidden')) {
+    if (!headerAccountMenu.contains(event.target) && !headerAccountTrigger?.contains(event.target)) {
+      closeHeaderAccountMenu();
+    }
+  }
 });
 
 document.addEventListener('keydown', (event) => {
@@ -1026,9 +1449,61 @@ document.addEventListener('keydown', (event) => {
   if (event.key === 'Escape' && universalSearchOpen) {
     closeUniversalSearch(true);
   }
+  if (event.key === 'Escape') {
+    closeHeaderAccountMenu();
+    hideBackdrop(backupRestoreBackdrop, backupRestoreBackdrop.firstElementChild);
+    hideBackdrop(logoutBackdrop, logoutBackdrop.firstElementChild);
+  }
 });
 
 window.addEventListener('vault-lock-state-changed', updateGlobalSearchAvailability);
+
+backupRestoreBackdrop.querySelector('#backup-restore-close')?.addEventListener('click', () => {
+  hideBackdrop(backupRestoreBackdrop, backupRestoreBackdrop.firstElementChild);
+});
+
+backupRestoreBackdrop.addEventListener('click', (event) => {
+  if (event.target === backupRestoreBackdrop) {
+    hideBackdrop(backupRestoreBackdrop, backupRestoreBackdrop.firstElementChild);
+  }
+});
+
+backupRestoreBackdrop.querySelector('#backup-export-btn')?.addEventListener('click', () => {
+  exportToJSON(loadContacts() || []);
+});
+
+backupRestoreBackdrop.querySelector('#backup-restore-input')?.addEventListener('change', (event) => {
+  const file = event.target.files?.[0];
+  if (!file) return;
+  importFromJSON(
+    file,
+    (importedContacts) => {
+      const { migrated } = migrateContacts(importedContacts);
+      saveContacts(migrated);
+      if (activeTab === 'contacts') {
+        renderCanvas();
+      }
+      hideBackdrop(backupRestoreBackdrop, backupRestoreBackdrop.firstElementChild);
+    },
+    () => {}
+  );
+  event.target.value = '';
+});
+
+logoutBackdrop.querySelector('#logout-cancel-btn')?.addEventListener('click', () => {
+  hideBackdrop(logoutBackdrop, logoutBackdrop.firstElementChild);
+});
+
+logoutBackdrop.querySelector('#logout-confirm-btn')?.addEventListener('click', () => {
+  hideBackdrop(logoutBackdrop, logoutBackdrop.firstElementChild);
+  activateTab(null);
+});
+
+logoutBackdrop.addEventListener('click', (event) => {
+  if (event.target === logoutBackdrop) {
+    hideBackdrop(logoutBackdrop, logoutBackdrop.firstElementChild);
+  }
+});
 
 // Initial Lucide setup
 if (window.lucide) {

@@ -112,6 +112,10 @@ export function saveContacts(contacts) {
   setItem(CONTACTS_KEY, contacts);
 }
 
+export function resetContactsToDefault() {
+  saveContacts(DEFAULT_CONTACTS);
+}
+
 export function initializeIfEmpty() {
   const contacts = loadContacts();
   if (contacts === null) {

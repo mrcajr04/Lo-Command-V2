@@ -83,20 +83,22 @@ export function createWidgetDeck() {
     handle.innerHTML = `<div class="h-1 w-10 rounded-full bg-white/10 group-hover:bg-white/30 transition-colors"></div>`;
 
     handle.addEventListener('pointerdown', (e) => {
-      const prev = handle.previousElementSibling;
-      const next = handle.nextElementSibling;
-      if (!prev || !next) return;
+      const currentSlot = handle.closest('.widget-stack-item');
+      const nextSlot = currentSlot?.nextElementSibling;
+      const prev = currentSlot?.querySelector('.widget-wrapper');
+      const next = nextSlot?.querySelector('.widget-wrapper');
+      if (!currentSlot || !nextSlot || !prev || !next) return;
       e.preventDefault();
 
       const startY = e.clientY;
       const hA = prev.getBoundingClientRect().height;
       const hB = next.getBoundingClientRect().height;
       const totalH = hA + hB;
-      const wA = parseFloat(prev.style.flexGrow) || 1;
-      const wB = parseFloat(next.style.flexGrow) || 1;
+      const wA = parseFloat(currentSlot.style.flexGrow) || 1;
+      const wB = parseFloat(nextSlot.style.flexGrow) || 1;
       const totalW = wA + wB;
-      const idA = prev.dataset.widgetId;
-      const idB = next.dataset.widgetId;
+      const idA = currentSlot.dataset.widgetId;
+      const idB = nextSlot.dataset.widgetId;
       const MIN = 64; // minimum pixel height per module
 
       handle.setPointerCapture(e.pointerId);
@@ -108,8 +110,8 @@ export function createWidgetDeck() {
         delta = Math.max(-(hA - MIN), Math.min(hB - MIN, delta));
         const newWA = ((hA + delta) / totalH) * totalW;
         const newWB = ((hB - delta) / totalH) * totalW;
-        prev.style.flexGrow = newWA;
-        next.style.flexGrow = newWB;
+        currentSlot.style.flexGrow = newWA;
+        nextSlot.style.flexGrow = newWB;
         widgetWeights[idA] = newWA;
         widgetWeights[idB] = newWB;
         refreshResponsiveWidgets();
@@ -127,6 +129,104 @@ export function createWidgetDeck() {
     });
 
     return handle;
+  }
+
+  function bindWidgetReorder(slot) {
+    const dragHandle = slot.querySelector('[data-widget-drag-handle]');
+    if (!dragHandle) return;
+
+    dragHandle.addEventListener('pointerdown', (e) => {
+      if (e.button !== 0) return;
+      if (e.target.closest('button, a, input, textarea, select, label, [contenteditable="true"]')) return;
+
+      const startRect = slot.getBoundingClientRect();
+      const startX = e.clientX;
+      const startY = e.clientY;
+      const pointerOffsetY = e.clientY - startRect.top;
+      let dragging = false;
+      let placeholder = null;
+
+      const startDrag = () => {
+        dragging = true;
+        placeholder = document.createElement('div');
+        placeholder.className = 'widget-drag-placeholder rounded-[1.35rem] border border-dashed border-gold/40 bg-white/[0.04]';
+        placeholder.style.height = `${startRect.height}px`;
+        placeholder.style.flexShrink = '0';
+
+        widgetsContainer.insertBefore(placeholder, slot);
+        widgetsContainer.appendChild(slot);
+
+        slot.classList.add('z-[70]', 'shadow-[0_20px_40px_rgba(0,0,0,0.28)]');
+        slot.style.position = 'fixed';
+        slot.style.left = `${startRect.left}px`;
+        slot.style.top = `${startRect.top}px`;
+        slot.style.width = `${startRect.width}px`;
+        slot.style.height = `${startRect.height}px`;
+        slot.style.pointerEvents = 'none';
+        slot.style.transform = 'scale(1.02)';
+        slot.style.opacity = '0.96';
+        document.body.style.userSelect = 'none';
+        document.body.style.cursor = 'grabbing';
+      };
+
+      const movePlaceholder = (clientY) => {
+        const siblings = [...widgetsContainer.querySelectorAll('.widget-stack-item')].filter((item) => item !== slot);
+        let inserted = false;
+        for (const sibling of siblings) {
+          const rect = sibling.getBoundingClientRect();
+          if (clientY < rect.top + rect.height / 2) {
+            widgetsContainer.insertBefore(placeholder, sibling);
+            inserted = true;
+            break;
+          }
+        }
+        if (!inserted) {
+          widgetsContainer.appendChild(placeholder);
+        }
+      };
+
+      const onMove = (ev) => {
+        if (!dragging) {
+          const deltaX = Math.abs(ev.clientX - startX);
+          const deltaY = Math.abs(ev.clientY - startY);
+          if (Math.max(deltaX, deltaY) < 6) return;
+          startDrag();
+        }
+
+        slot.style.top = `${ev.clientY - pointerOffsetY}px`;
+        movePlaceholder(ev.clientY);
+      };
+
+      const finish = () => {
+        window.removeEventListener('pointermove', onMove);
+        window.removeEventListener('pointerup', finish);
+        window.removeEventListener('pointercancel', finish);
+
+        if (!dragging) return;
+
+        widgetsContainer.insertBefore(slot, placeholder);
+        placeholder.remove();
+
+        slot.classList.remove('z-[70]', 'shadow-[0_20px_40px_rgba(0,0,0,0.28)]');
+        slot.style.position = '';
+        slot.style.left = '';
+        slot.style.top = '';
+        slot.style.width = '';
+        slot.style.height = '';
+        slot.style.pointerEvents = '';
+        slot.style.transform = '';
+        slot.style.opacity = '';
+        document.body.style.userSelect = '';
+        document.body.style.cursor = '';
+
+        activeWidgets = [...widgetsContainer.querySelectorAll('.widget-stack-item')].map((item) => item.dataset.widgetId);
+        updateDeck();
+      };
+
+      window.addEventListener('pointermove', onMove);
+      window.addEventListener('pointerup', finish);
+      window.addEventListener('pointercancel', finish);
+    });
   }
 
   function bindQuickActionsLayout(widgetElement) {
@@ -546,22 +646,25 @@ export function createWidgetDeck() {
         responsiveWidgetSyncers.delete(widget._quickActionsSync);
       }
     });
-    widgetsContainer.querySelectorAll('.widget-wrapper, .widget-resize-handle').forEach(w => w.remove());
+    widgetsContainer.querySelectorAll('.widget-stack-item, .widget-drag-placeholder').forEach(w => w.remove());
 
     // 3. Render current active widgets
     activeWidgets.forEach((widgetId, index) => {
       const def = widgetDefinitions[widgetId];
+      const slot = document.createElement('div');
+      slot.className = 'widget-stack-item min-h-0 flex flex-col';
+      slot.dataset.widgetId = widgetId;
+      slot.style.flexGrow = widgetWeights[widgetId] || 1;
+      slot.style.flexShrink = '1';
+      slot.style.flexBasis = '0%';
+
       const element = document.createElement('div');
-      element.className = 'widget-wrapper min-h-0 flex flex-col rounded-[1.35rem] border border-[#284262] bg-[linear-gradient(180deg,rgba(20,39,67,0.95)_0%,rgba(14,29,51,0.98)_100%)] p-3.5 shadow-[inset_0_1px_0_rgba(255,255,255,0.04),0_14px_28px_rgba(0,0,0,0.16)]';
-      // Resizable flex sizing: grow weight is user-adjustable, basis 0 so weights map to proportions
+      element.className = 'widget-wrapper min-h-0 flex flex-1 flex-col rounded-[1.35rem] border border-[#284262] bg-[linear-gradient(180deg,rgba(20,39,67,0.95)_0%,rgba(14,29,51,0.98)_100%)] p-3.5 shadow-[inset_0_1px_0_rgba(255,255,255,0.04),0_14px_28px_rgba(0,0,0,0.16)]';
       element.dataset.widgetId = widgetId;
-      element.style.flexGrow = widgetWeights[widgetId] || 1;
-      element.style.flexShrink = '1';
-      element.style.flexBasis = '0%';
 
       element.innerHTML = `
         <!-- Compact Header -->
-        <div class="flex items-center justify-between mb-3 flex-shrink-0 pb-2 border-b border-white/8 select-none">
+        <div data-widget-drag-handle class="flex items-center justify-between mb-3 flex-shrink-0 pb-2 border-b border-white/8 select-none cursor-grab active:cursor-grabbing">
             <span class="text-[0.72rem] font-bold uppercase tracking-[0.16em] text-white/95 flex items-center">
                 <i class="${def.iconClass}"></i>
                 ${def.title}
@@ -613,12 +716,15 @@ export function createWidgetDeck() {
         applyFaviconToImg(img, img.dataset.linkId, img.dataset.faviconUrl, img.dataset.altFaviconDomain || '');
       });
 
-      widgetsContainer.appendChild(element);
+      slot.appendChild(element);
 
       // Insert a drag handle between this module and the next one
       if (index < activeWidgets.length - 1) {
-        widgetsContainer.appendChild(createResizeHandle());
+        slot.appendChild(createResizeHandle());
       }
+
+      bindWidgetReorder(slot);
+      widgetsContainer.appendChild(slot);
     });
 
     refreshResponsiveWidgets();
