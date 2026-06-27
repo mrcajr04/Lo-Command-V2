@@ -16,6 +16,8 @@ export function createContactsModule(onBack) {
   let searchQuery = '';
   let sortMode = 'alpha-asc';
   let viewMode = 'grid';
+  let contentMode = 'directory';
+  let selectedMemoContactId = null;
   let detailContactId = null;
   let pendingDeleteId = null;
   let editingNoteId = null;
@@ -38,11 +40,23 @@ export function createContactsModule(onBack) {
 
     <!-- Search / Sort / View row -->
     <div class="bg-white rounded-xl border border-softBlue2 p-4 shadow-sm flex flex-col md:flex-row gap-4 items-center justify-between flex-shrink-0">
-      <div class="relative w-full md:w-80">
-        <div class="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none text-steel">
-          <i data-lucide="search" class="w-4 h-4"></i>
+      <div class="flex w-full flex-col xl:flex-row xl:items-center gap-3 xl:flex-1">
+        <div class="inline-flex items-center rounded-xl border border-softBlue2 bg-lightGray p-1 flex-shrink-0">
+          <button id="ct-mode-directory" class="inline-flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-xs font-bold transition-all focus:outline-none">
+            <i data-lucide="users" class="w-3.5 h-3.5"></i>
+            <span>Directory View</span>
+          </button>
+          <button id="ct-mode-memos" class="inline-flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-xs font-bold transition-all focus:outline-none">
+            <i data-lucide="history" class="w-3.5 h-3.5"></i>
+            <span>Timed Activity Memos</span>
+          </button>
         </div>
-        <input id="ct-search" type="text" placeholder="Search names, phone, tags, companies..." class="w-full pl-9 pr-4 py-2 text-sm border-2 border-softBlue1 rounded-lg focus:outline-none focus:ring-2 focus:ring-steel focus:border-transparent bg-lightGray text-navy placeholder-steel/60 transition-all">
+        <div class="relative w-full xl:flex-1 xl:max-w-md">
+          <div class="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none text-steel">
+            <i data-lucide="search" class="w-4 h-4"></i>
+          </div>
+          <input id="ct-search" type="text" placeholder="Search names, phone, tags, companies..." class="w-full pl-9 pr-4 py-2 text-sm border-2 border-softBlue1 rounded-lg focus:outline-none focus:ring-2 focus:ring-steel focus:border-transparent bg-lightGray text-navy placeholder-steel/60 transition-all">
+        </div>
       </div>
       <div class="flex items-center justify-between w-full md:w-auto gap-4">
         <div class="flex items-center space-x-2 text-sm">
@@ -90,8 +104,8 @@ export function createContactsModule(onBack) {
         <div class="w-16 h-16 bg-softBlue1 rounded-2xl flex items-center justify-center text-steel mb-4 border border-softBlue2">
           <i data-lucide="folder-open" class="w-8 h-8"></i>
         </div>
-        <h4 class="text-lg font-bold text-navy">No Contact Entries Match</h4>
-        <p class="text-steel text-sm max-w-sm mt-1">Adjust your filter options, modify the search query, or add a new contact profile.</p>
+        <h4 id="ct-empty-title" class="text-lg font-bold text-navy">No Contact Entries Match</h4>
+        <p id="ct-empty-copy" class="text-steel text-sm max-w-sm mt-1">Adjust your filter options, modify the search query, or add a new contact profile.</p>
         <button id="ct-empty-add-btn" class="mt-4 bg-navy hover:bg-steel text-white text-xs font-bold px-4 py-2 rounded-lg border border-gold transition-colors focus:outline-none">
           Create Profile Card
         </button>
@@ -344,6 +358,8 @@ export function createContactsModule(onBack) {
 
   // ─── DOM REFS ─────────────────────────────────────────────────────────────
   const searchInput       = container.querySelector('#ct-search');
+  const modeDirectoryBtn  = container.querySelector('#ct-mode-directory');
+  const modeMemosBtn      = container.querySelector('#ct-mode-memos');
   const sortSelect        = container.querySelector('#ct-sort');
   const viewGridBtn       = container.querySelector('#ct-view-grid');
   const viewListBtn       = container.querySelector('#ct-view-list');
@@ -354,6 +370,8 @@ export function createContactsModule(onBack) {
   const filterPillsDiv    = container.querySelector('#ct-filter-pills');
   const contactsContainer = container.querySelector('#ct-contacts-container');
   const emptyState        = container.querySelector('#ct-empty-state');
+  const emptyTitle        = container.querySelector('#ct-empty-title');
+  const emptyCopy         = container.querySelector('#ct-empty-copy');
 
   const modalBackdrop     = container.querySelector('#ct-modal-backdrop');
   const modalInner        = modalBackdrop.querySelector('div');
@@ -426,6 +444,7 @@ export function createContactsModule(onBack) {
   // ─── RENDER ───────────────────────────────────────────────────────────────
   function renderAll() {
     renderFilterPills();
+    renderContentModeToggle();
     renderContacts();
   }
 
@@ -459,10 +478,33 @@ export function createContactsModule(onBack) {
     if (window.lucide) window.lucide.createIcons();
   }
 
+  function getMemoContacts() {
+    return getFiltered()
+      .filter(contact => (contact.timeline || []).length > 0)
+      .map(contact => {
+        const entries = (contact.timeline || []).slice().sort((a, b) => new Date(b.timestamp) - new Date(a.timestamp));
+        return {
+          ...contact,
+          timelineEntries: entries,
+          lastActivityAt: entries[0]?.timestamp || contact.createdAt,
+          memoCount: entries.length,
+        };
+      })
+      .sort((a, b) => new Date(b.lastActivityAt) - new Date(a.lastActivityAt));
+  }
+
   function renderContacts() {
     const filtered = getFiltered();
-    if (filtered.length === 0) {
+    const memoContacts = getMemoContacts();
+    const isDirectoryMode = contentMode === 'directory';
+    const hasResults = isDirectoryMode ? filtered.length > 0 : memoContacts.length > 0;
+
+    if (!hasResults) {
       contactsContainer.innerHTML = '';
+      emptyTitle.textContent = isDirectoryMode ? 'No Contact Entries Match' : 'No Activity Memos Match';
+      emptyCopy.textContent = isDirectoryMode
+        ? 'Adjust your filter options, modify the search query, or add a new contact profile.'
+        : 'Try a different filter or search query, or add a new activity memo from a contact profile.';
       emptyState.classList.remove('hidden');
       emptyState.classList.add('flex');
       if (window.lucide) window.lucide.createIcons();
@@ -471,7 +513,104 @@ export function createContactsModule(onBack) {
     emptyState.classList.add('hidden');
     emptyState.classList.remove('flex');
 
-    if (viewMode === 'grid') {
+    if (!isDirectoryMode) {
+      const hasSelectedContact = memoContacts.some(contact => contact.id === selectedMemoContactId);
+      if (!hasSelectedContact) selectedMemoContactId = memoContacts[0]?.id || null;
+      const activeMemoContact = memoContacts.find(contact => contact.id === selectedMemoContactId) || memoContacts[0];
+      const memoSubtitle = [activeMemoContact.role, activeMemoContact.company].filter(Boolean).join(' · ') || 'Personal Contact';
+      const activeCategoryClass = activeMemoContact.category === 'business'
+        ? 'bg-navy text-white'
+        : 'bg-steel/15 text-steel border border-steel/25';
+
+      contactsContainer.className = 'grid grid-cols-1 xl:grid-cols-[300px_minmax(0,1fr)] gap-5 items-start';
+      contactsContainer.innerHTML = `
+        <aside class="bg-white border border-softBlue2 rounded-2xl shadow-sm overflow-hidden">
+          <div class="px-4 py-3 border-b border-softBlue1 bg-lightGray/60 flex items-center justify-between">
+            <div>
+              <p class="text-[10px] font-bold uppercase tracking-[0.18em] text-steel">Contacts List</p>
+              <p class="text-sm font-bold text-navy mt-1">${memoContacts.length} active timelines</p>
+            </div>
+            <span class="inline-flex items-center justify-center min-w-7 h-7 px-2 rounded-full bg-softBlue1 text-navy text-xs font-bold border border-softBlue2">${memoContacts.length}</span>
+          </div>
+          <div class="max-h-[70vh] overflow-y-auto custom-scrollbar">
+            ${memoContacts.map(contact => {
+              const { bg, text } = getAvatarPalette(contact.name);
+              const isActive = contact.id === activeMemoContact.id;
+              const contactSubtitle = [contact.role, contact.company].filter(Boolean).join(' · ') || 'Personal Contact';
+              const colorDots = (contact.tags || []).slice(0, 4).map((_, index) => {
+                const palette = ['bg-green', 'bg-softBlue2', 'bg-gold', 'bg-amber'];
+                return `<span class="h-2.5 w-2.5 rounded-full ${palette[index % palette.length]}"></span>`;
+              }).join('');
+              return `
+                <button type="button" data-action="select-memo-contact" data-id="${contact.id}" class="w-full text-left px-4 py-4 border-l-4 transition-all ${isActive ? 'bg-navy text-white border-softBlue2' : 'bg-white hover:bg-lightGray/70 border-transparent'}">
+                  <div class="flex items-start gap-3">
+                    <div class="w-10 h-10 rounded-xl flex-shrink-0 flex items-center justify-center font-bold text-sm ${bg} ${text}">
+                      ${getInitials(contact.name)}
+                    </div>
+                    <div class="min-w-0 flex-1">
+                      <div class="flex items-start justify-between gap-2">
+                        <div class="min-w-0">
+                          <h4 class="text-sm font-bold truncate ${isActive ? 'text-white' : 'text-navy'}">${escapeHTML(contact.name)}</h4>
+                          <p class="text-xs mt-0.5 truncate ${isActive ? 'text-white/70' : 'text-steel'}">${escapeHTML(contactSubtitle)}</p>
+                        </div>
+                        <span class="text-[10px] whitespace-nowrap ${isActive ? 'text-white/55' : 'text-steel/70'}">${new Date(contact.lastActivityAt).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}</span>
+                      </div>
+                      <div class="mt-3 flex items-center justify-between gap-2">
+                        <span class="inline-flex items-center rounded-full px-2 py-0.5 text-[10px] font-bold ${isActive ? 'bg-white/10 text-white' : 'bg-softBlue1 text-navy border border-softBlue2'}">${contact.memoCount} notes</span>
+                        <div class="flex items-center gap-1.5">${colorDots}</div>
+                      </div>
+                    </div>
+                  </div>
+                </button>
+              `;
+            }).join('')}
+          </div>
+        </aside>
+
+        <section class="min-w-0 bg-white border border-softBlue2 rounded-2xl shadow-sm overflow-hidden">
+          <div class="px-5 py-4 border-b border-softBlue1 bg-lightGray/40">
+            <div class="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
+              <div class="flex items-start gap-3 min-w-0">
+                <div class="w-12 h-12 rounded-xl flex-shrink-0 flex items-center justify-center font-bold text-base ${getAvatarPalette(activeMemoContact.name).bg} ${getAvatarPalette(activeMemoContact.name).text}">
+                  ${getInitials(activeMemoContact.name)}
+                </div>
+                <div class="min-w-0">
+                  <div class="flex flex-wrap items-center gap-2">
+                    <h3 class="text-xl font-extrabold text-navy truncate">${escapeHTML(activeMemoContact.name)}</h3>
+                    <span class="inline-flex items-center rounded-full px-2.5 py-1 text-[10px] font-bold ${activeCategoryClass}">
+                      ${activeMemoContact.category === 'business' ? 'Business' : 'Personal'}
+                    </span>
+                  </div>
+                  <p class="text-sm text-steel mt-1 truncate">${escapeHTML(memoSubtitle)}</p>
+                  <div class="mt-2 flex flex-wrap items-center gap-4 text-xs text-steel">
+                    <span class="inline-flex items-center gap-1.5"><i data-lucide="mail" class="w-3.5 h-3.5"></i>${escapeHTML(activeMemoContact.email || 'No email')}</span>
+                    <span class="inline-flex items-center gap-1.5"><i data-lucide="phone" class="w-3.5 h-3.5"></i>${escapeHTML(activeMemoContact.phone)}</span>
+                  </div>
+                </div>
+              </div>
+              <div class="text-xs font-semibold text-steel whitespace-nowrap">${activeMemoContact.memoCount} activity memos</div>
+            </div>
+          </div>
+          <div class="p-5 space-y-4 bg-softBlue1/35">
+            ${activeMemoContact.timelineEntries.map(entry => `
+              <button type="button" data-action="open-detail" data-id="${activeMemoContact.id}" class="w-full text-left bg-white border border-softBlue2 rounded-2xl p-4 shadow-sm hover:border-steel hover:shadow-md transition-all focus:outline-none">
+                <div class="flex items-start justify-between gap-3">
+                  <div class="flex items-center gap-2">
+                    <span class="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-[10px] font-bold bg-softBlue1 text-navy border border-softBlue2">
+                      <i data-lucide="clipboard-list" class="w-3 h-3 text-gold"></i>
+                      Memo
+                    </span>
+                    <span class="text-sm font-bold text-navy truncate">${escapeHTML(entry.note.split('\n')[0].slice(0, 64) || 'Activity Memo')}</span>
+                  </div>
+                  <span class="text-[11px] font-semibold text-steel whitespace-nowrap">${new Date(entry.timestamp).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}</span>
+                </div>
+                <div class="mt-3 text-sm font-semibold text-navy leading-relaxed break-words whitespace-pre-wrap">${escapeHTML(entry.note)}</div>
+              </button>
+            `).join('')}
+          </div>
+        </section>
+      `;
+    } else if (viewMode === 'grid') {
       contactsContainer.className = 'grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-6';
       contactsContainer.innerHTML = filtered.map(renderContactCard).join('');
     } else {
@@ -493,6 +632,16 @@ export function createContactsModule(onBack) {
     const inactive = 'p-1.5 rounded-md text-steel hover:text-navy transition-all focus:outline-none';
     viewGridBtn.className = viewMode === 'grid' ? active : inactive;
     viewListBtn.className = viewMode === 'list' ? active : inactive;
+    const hidden = contentMode === 'memos';
+    viewGridBtn.parentElement.classList.toggle('hidden', hidden);
+  }
+
+  function renderContentModeToggle() {
+    const active = 'bg-white text-navy shadow-sm';
+    const inactive = 'text-steel hover:text-navy';
+    modeDirectoryBtn.className = `inline-flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-xs font-bold transition-all focus:outline-none ${contentMode === 'directory' ? active : inactive}`;
+    modeMemosBtn.className = `inline-flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-xs font-bold transition-all focus:outline-none ${contentMode === 'memos' ? active : inactive}`;
+    renderViewToggle();
   }
 
   // ─── MODAL HELPERS ────────────────────────────────────────────────────────
@@ -861,6 +1010,8 @@ export function createContactsModule(onBack) {
   });
 
   searchInput.addEventListener('input', (e) => { searchQuery = e.target.value; renderContacts(); });
+  modeDirectoryBtn.addEventListener('click', () => { contentMode = 'directory'; renderContentModeToggle(); renderContacts(); });
+  modeMemosBtn.addEventListener('click', () => { contentMode = 'memos'; renderContentModeToggle(); renderContacts(); });
   sortSelect.addEventListener('change', (e) => { sortMode = e.target.value; renderContacts(); });
   viewGridBtn.addEventListener('click', () => { viewMode = 'grid'; renderContacts(); renderViewToggle(); });
   viewListBtn.addEventListener('click', () => { viewMode = 'list'; renderContacts(); renderViewToggle(); });
@@ -925,6 +1076,11 @@ export function createContactsModule(onBack) {
       const action = actionBtn.getAttribute('data-action');
       const id     = actionBtn.getAttribute('data-id');
       if (action === 'call' || action === 'email') { return; }
+      if (action === 'select-memo-contact') {
+        selectedMemoContactId = id;
+        renderContacts();
+        return;
+      }
       if (action === 'toggle-fav') { toggleFavorite(id); return; }
       if (action === 'edit')       { openEditModal(id);   return; }
       if (action === 'delete')     { openDeleteModal(id); return; }

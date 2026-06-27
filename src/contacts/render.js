@@ -41,6 +41,12 @@ export function renderContactCard(contact) {
   const initials = getInitials(contact.name);
   const logCount = (contact.timeline || []).length;
   const starClass = contact.favorite ? 'text-gold fill-gold' : '';
+  const isBusiness = contact.category === 'business';
+  const categoryBadge = `
+    <span class="self-start flex-shrink-0 inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[10px] font-bold transition-opacity duration-150 group-hover:opacity-0 ${isBusiness ? 'bg-navy text-white' : 'bg-steel/15 text-steel border border-steel/25'}">
+      <i data-lucide="${isBusiness ? 'briefcase' : 'user'}" class="w-3 h-3"></i>
+      ${isBusiness ? 'Business' : 'Personal'}
+    </span>`;
 
   return `
   <div class="bg-white rounded-2xl border-2 border-softBlue2 hover:border-steel p-5 shadow-sm hover:shadow-md transition-all duration-200 flex flex-col justify-between group relative cursor-pointer" data-action="open-detail" data-id="${contact.id}">
@@ -64,16 +70,19 @@ export function renderContactCard(contact) {
         <h4 class="text-sm font-bold text-navy group-hover:text-steel truncate transition-colors">${escapeHTML(contact.name)}</h4>
         <p class="text-xs text-steel truncate mt-0.5 font-medium">${escapeHTML(contact.role || 'No Corporate Role')}</p>
       </div>
+      ${categoryBadge}
     </div>
 
     <div class="py-4 space-y-2.5 text-xs text-navy">
       <div class="flex items-center space-x-2.5">
         <i data-lucide="phone" class="w-3.5 h-3.5 text-steel flex-shrink-0"></i>
-        <span class="truncate font-medium">${escapeHTML(contact.phone)}</span>
+        <a href="tel:${escapeHTML(contact.phone)}" data-action="call" data-id="${contact.id}" class="truncate min-w-0 font-medium text-steel hover:text-navy hover:underline transition-colors">${escapeHTML(contact.phone)}</a>
       </div>
       <div class="flex items-center space-x-2.5">
         <i data-lucide="mail" class="w-3.5 h-3.5 text-steel flex-shrink-0"></i>
-        <span class="truncate ${contact.email ? '' : 'text-steel/55 italic'}">${escapeHTML(contact.email || 'No email specified')}</span>
+        ${contact.email
+          ? `<a href="mailto:${escapeHTML(contact.email)}" data-action="email" data-id="${contact.id}" class="truncate min-w-0 text-steel hover:text-navy hover:underline transition-colors">${escapeHTML(contact.email)}</a>`
+          : `<span class="truncate text-steel/55 italic">No email specified</span>`}
       </div>
       <div class="flex items-center space-x-2.5">
         <i data-lucide="building" class="w-3.5 h-3.5 text-steel flex-shrink-0"></i>
@@ -85,15 +94,9 @@ export function renderContactCard(contact) {
       </div>
     </div>
 
-    <div class="pt-3 border-t border-softBlue1 flex items-center justify-between gap-2">
+    <div class="pt-3 border-t border-softBlue1 flex items-center gap-2">
       <div class="flex flex-wrap gap-1 min-w-0 flex-1">
         ${renderTagChips(contact.tags)}
-      </div>
-      <div class="flex space-x-1.5 flex-shrink-0">
-        <a href="tel:${escapeHTML(contact.phone)}" data-action="call" data-id="${contact.id}" class="p-1.5 rounded-lg text-green bg-lightGray hover:bg-softBlue1 transition-all" title="Call">
-          <i data-lucide="phone-call" class="w-3.5 h-3.5"></i>
-        </a>
-        ${contact.email ? `<a href="mailto:${escapeHTML(contact.email)}" data-action="email" data-id="${contact.id}" class="p-1.5 rounded-lg text-steel bg-lightGray hover:bg-softBlue1 transition-all" title="Email"><i data-lucide="send" class="w-3.5 h-3.5"></i></a>` : ''}
       </div>
     </div>
   </div>`;
