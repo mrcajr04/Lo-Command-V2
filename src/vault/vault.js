@@ -339,7 +339,7 @@ export function createVaultModule() {
     if (!hasVaultData()) {
       try {
         const salt = generateSalt();
-        const key = await deriveKey('1234', salt);
+        const key = await deriveKey('0404', salt);
         const { ciphertext, iv } = await encryptData(key, DEFAULT_CREDENTIALS);
         saveVaultData(salt, iv, ciphertext);
       } catch (err) {
