@@ -4,7 +4,7 @@
 export function createSidebar(activeTab, onTabChange, options = {}) {
   const { collapsed = false, onToggleCollapse = null } = options;
   const aside = document.createElement('aside');
-  aside.className = `shell-sidebar group/sidebar ${collapsed ? 'w-20' : 'w-72'} bg-[linear-gradient(180deg,#13243f_0%,#0d1c33_100%)] border-r border-[#203756] flex flex-col justify-between flex-shrink-0 text-slate-200 shadow-[inset_-1px_0_0_rgba(255,255,255,0.03)] transition-[width] duration-300 ease-out overflow-visible`;
+  aside.className = `shell-sidebar group/sidebar ${collapsed ? 'w-20' : 'w-60'} bg-[linear-gradient(180deg,#13243f_0%,#0d1c33_100%)] border-r border-[#203756] flex flex-col justify-between flex-shrink-0 text-slate-200 shadow-[inset_-1px_0_0_rgba(255,255,255,0.03)] transition-[width] duration-300 ease-out overflow-visible`;
   
   aside.innerHTML = `
     <div>
