@@ -36,6 +36,9 @@ export function createContactsModule(onBack) {
   let lastHeaderH = 112; // tracks header height to compensate scrollTop when it grows/shrinks
   let compactContactShown = false;
   let compactNotesShown = false;
+  let memoCategory = null;
+  let editingMemoId = null;
+  let pendingDeleteMemoId = null;
 
   container.innerHTML = `
   <div id="ct-toast" class="fixed bottom-6 right-6 z-[60] flex flex-col space-y-3 max-w-sm w-full pointer-events-none"></div>
@@ -376,6 +379,57 @@ export function createContactsModule(onBack) {
     </div>
   </div>
 
+  <!-- ADD MEMO MODAL -->
+  <div id="ct-memo-backdrop" class="fixed inset-0 bg-navy/60 backdrop-blur-sm flex items-center justify-center p-4 z-50 hidden transition-all duration-300 opacity-0">
+    <div class="bg-white rounded-2xl shadow-2xl max-w-lg w-full overflow-hidden border border-softBlue2 transform scale-95 transition-all duration-300">
+      <div class="p-5 border-b border-softBlue1 bg-lightGray flex items-center justify-between">
+        <h3 class="text-base font-bold text-navy">Log New Activity Memo</h3>
+        <button id="ct-memo-close" class="text-steel hover:text-navy hover:bg-softBlue1 p-1.5 rounded-lg transition-colors focus:outline-none">
+          <i data-lucide="x" class="w-5 h-5"></i>
+        </button>
+      </div>
+      <div class="p-5 space-y-4">
+        <div>
+          <label class="text-[10px] font-bold uppercase tracking-[0.18em] text-steel block mb-1.5">Note Category</label>
+          <select id="ct-memo-category-select" class="w-full rounded-lg border border-softBlue2 px-3 py-2 text-sm text-navy focus:outline-none focus:border-navy focus:ring-1 focus:ring-navy/20 transition bg-white">
+            <option value="">General Memo</option>
+            <option value="follow-up">Follow Up</option>
+            <option value="meeting">Meeting</option>
+            <option value="idea">Idea</option>
+            <option value="update">Update</option>
+            <option value="milestone">Milestone</option>
+          </select>
+        </div>
+        <div id="ct-memo-followup-field" class="hidden">
+          <label class="text-[10px] font-bold uppercase tracking-[0.18em] text-steel block mb-1.5">Follow Up Date &amp; Time</label>
+          <input type="datetime-local" id="ct-memo-followup-dt" class="w-full rounded-lg border border-softBlue2 px-3 py-2 text-sm text-navy focus:outline-none focus:border-navy focus:ring-1 focus:ring-navy/20 transition" />
+        </div>
+        <div id="ct-memo-meeting-fields" class="hidden space-y-3">
+          <div>
+            <label class="text-[10px] font-bold uppercase tracking-[0.18em] text-steel block mb-1.5">Meeting Date &amp; Time</label>
+            <input type="datetime-local" id="ct-memo-meeting-dt" class="w-full rounded-lg border border-softBlue2 px-3 py-2 text-sm text-navy focus:outline-none focus:border-navy focus:ring-1 focus:ring-navy/20 transition" />
+          </div>
+          <div>
+            <label class="text-[10px] font-bold uppercase tracking-[0.18em] text-steel block mb-1.5">Meeting Link <span class="text-steel/50 normal-case font-normal">(optional)</span></label>
+            <input type="url" id="ct-memo-meeting-link" placeholder="https://meet.google.com/..." class="w-full rounded-lg border border-softBlue2 px-3 py-2 text-sm text-navy focus:outline-none focus:border-navy focus:ring-1 focus:ring-navy/20 transition" />
+          </div>
+        </div>
+        <div>
+          <label class="text-[10px] font-bold uppercase tracking-[0.18em] text-steel block mb-1.5">Note Title / Headline <span class="text-steel/50 normal-case font-normal">(optional)</span></label>
+          <input type="text" id="ct-memo-title" placeholder="Brief headline of this activity" class="w-full rounded-lg border border-softBlue2 px-3 py-2 text-sm text-navy focus:outline-none focus:border-navy focus:ring-1 focus:ring-navy/20 transition" />
+        </div>
+        <div>
+          <label class="text-[10px] font-bold uppercase tracking-[0.18em] text-steel block mb-1.5">Detailed Content <span class="text-red-400">*</span></label>
+          <textarea id="ct-memo-content" rows="4" placeholder="Write down conversation briefs, next actions, or agreements made..." class="w-full rounded-lg border border-softBlue2 px-3 py-2 text-sm text-navy focus:outline-none focus:border-navy focus:ring-1 focus:ring-navy/20 transition resize-none"></textarea>
+        </div>
+      </div>
+      <div class="px-5 py-4 border-t border-softBlue1 bg-lightGray flex items-center justify-end gap-3">
+        <button type="button" id="ct-memo-cancel" class="px-4 py-2 text-sm font-semibold text-steel hover:text-navy transition-colors focus:outline-none">Cancel</button>
+        <button type="button" id="ct-memo-save" class="px-5 py-2 text-sm font-bold text-white bg-navy hover:bg-steel active:scale-[0.98] rounded-lg border-2 border-transparent hover:border-gold transition-all duration-150 focus:outline-none">Save Log Entry</button>
+      </div>
+    </div>
+  </div>
+
   <!-- IMPORT PREVIEW MODAL -->
   <div id="ct-import-backdrop" class="fixed inset-0 bg-navy/60 backdrop-blur-sm flex items-center justify-center p-4 z-50 hidden transition-all duration-300 opacity-0">
     <div class="bg-white rounded-2xl shadow-2xl max-w-2xl w-full overflow-hidden border border-softBlue2 transform scale-95 transition-all duration-300 flex flex-col max-h-[90vh]">
@@ -433,6 +487,8 @@ export function createContactsModule(onBack) {
   const importSummary     = container.querySelector('#ct-import-summary');
   const importList        = container.querySelector('#ct-import-list');
   const importConfirmBtn  = container.querySelector('#ct-import-confirm');
+  const memoBackdrop      = container.querySelector('#ct-memo-backdrop');
+  const memoInner         = memoBackdrop.querySelector('div');
   const filterPillsDiv    = container.querySelector('#ct-filter-pills');
   const contactsContainer = container.querySelector('#ct-contacts-container');
   const emptyState        = container.querySelector('#ct-empty-state');
@@ -991,21 +1047,55 @@ export function createContactsModule(onBack) {
             </div>
           </div>
           <div class="p-5 space-y-4 bg-softBlue1/35">
-            ${activeMemoContact.timelineEntries.map(entry => `
-              <button type="button" data-action="open-detail" data-id="${activeMemoContact.id}" class="w-full text-left bg-white border border-softBlue2 rounded-2xl p-4 shadow-sm hover:border-steel hover:shadow-md transition-all focus:outline-none">
-                <div class="flex items-start justify-between gap-3">
-                  <div class="flex items-center gap-2">
-                    <span class="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-[10px] font-bold bg-softBlue1 text-navy border border-softBlue2">
-                      <i data-lucide="clipboard-list" class="w-3 h-3 text-gold"></i>
-                      Memo
-                    </span>
-                    <span class="text-sm font-bold text-navy truncate">${escapeHTML(entry.note.split('\n')[0].slice(0, 64) || 'Activity Memo')}</span>
+            ${activeMemoContact.timelineEntries.map(entry => {
+              const catMeta = {
+                'follow-up': { label: 'Follow Up', icon: 'clock', color: 'bg-amber/10 text-amber border-amber/30' },
+                'meeting':   { label: 'Meeting',   icon: 'calendar', color: 'bg-softBlue1 text-navy border-softBlue2' },
+                'idea':      { label: 'Idea',      icon: 'lightbulb', color: 'bg-green/10 text-green border-green/30' },
+                'update':    { label: 'Update',    icon: 'refresh-cw', color: 'bg-steel/10 text-steel border-steel/25' },
+                'milestone': { label: 'Milestone', icon: 'trophy', color: 'bg-gold/10 text-gold border-gold/30' },
+              }[entry.category] || { label: 'Memo', icon: 'clipboard-list', color: 'bg-softBlue1 text-navy border-softBlue2' };
+              const displayTitle = entry.title || entry.note.split('\n')[0].slice(0, 64) || '';
+              const createdStr = new Date(entry.timestamp).toLocaleString('en-US', { month: 'short', day: 'numeric', year: 'numeric', hour: 'numeric', minute: '2-digit' });
+              const editedStr = entry.editedAt ? new Date(entry.editedAt).toLocaleString('en-US', { month: 'short', day: 'numeric', year: 'numeric', hour: 'numeric', minute: '2-digit' }) : null;
+              return `
+              <div class="bg-white border border-softBlue2 rounded-2xl p-4 shadow-sm">
+                <div class="flex items-start justify-between gap-3 mb-2.5">
+                  <div class="flex flex-wrap items-center gap-1.5 text-[10px] text-steel min-w-0">
+                    <i data-lucide="clock" class="w-3 h-3 flex-shrink-0"></i>
+                    <span class="font-semibold whitespace-nowrap">${createdStr}</span>
+                    ${editedStr ? `<span class="text-steel/50">·</span><i data-lucide="pencil" class="w-2.5 h-2.5 flex-shrink-0 opacity-50"></i><span class="text-steel/70 whitespace-nowrap">Last edited ${editedStr}</span>` : ''}
                   </div>
-                  <span class="text-[11px] font-semibold text-steel whitespace-nowrap">${new Date(entry.timestamp).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}</span>
+                  ${pendingDeleteMemoId === entry.id ? `
+                  <div class="flex items-center gap-2 flex-shrink-0">
+                    <span class="text-[11px] font-semibold text-red-500">This will remove this memo.</span>
+                    <button type="button" data-action="cancel-delete-memo" data-entry-id="${entry.id}" class="text-[11px] font-bold text-steel hover:text-navy transition focus:outline-none">Cancel</button>
+                    <button type="button" data-action="confirm-delete-memo" data-id="${activeMemoContact.id}" data-entry-id="${entry.id}" class="text-[11px] font-bold text-red-500 hover:text-red-700 transition focus:outline-none">Delete</button>
+                  </div>
+                  ` : `
+                  <div class="flex items-center gap-1 flex-shrink-0">
+                    <button type="button" data-action="edit-memo" data-id="${activeMemoContact.id}" data-entry-id="${entry.id}" class="p-1.5 rounded-lg text-steel hover:text-navy hover:bg-softBlue1 transition focus:outline-none" title="Edit memo">
+                      <i data-lucide="pencil" class="w-3.5 h-3.5"></i>
+                    </button>
+                    <button type="button" data-action="delete-memo" data-id="${activeMemoContact.id}" data-entry-id="${entry.id}" class="p-1.5 rounded-lg text-steel hover:text-red-500 hover:bg-red-50 transition focus:outline-none" title="Delete memo">
+                      <i data-lucide="trash-2" class="w-3.5 h-3.5"></i>
+                    </button>
+                  </div>
+                  `}
                 </div>
-                <div class="mt-3 text-sm font-semibold text-navy leading-relaxed break-words whitespace-pre-wrap">${escapeHTML(entry.note)}</div>
-              </button>
-            `).join('')}
+                <div class="flex items-center gap-2 min-w-0">
+                  <span class="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-[10px] font-bold border flex-shrink-0 ${catMeta.color}">
+                    <i data-lucide="${catMeta.icon}" class="w-3 h-3"></i>
+                    ${catMeta.label}
+                  </span>
+                  ${displayTitle ? `<span class="text-sm font-bold text-navy truncate">${escapeHTML(displayTitle)}</span>` : ''}
+                </div>
+                ${entry.followUpAt ? `<p class="mt-2 text-[10px] font-semibold text-amber flex items-center gap-1"><i data-lucide="clock" class="w-3 h-3"></i>Follow up: ${new Date(entry.followUpAt).toLocaleString('en-US', { month: 'short', day: 'numeric', year: 'numeric', hour: 'numeric', minute: '2-digit' })}</p>` : ''}
+                ${entry.meetingAt ? `<p class="mt-2 text-[10px] font-semibold text-navy flex items-center gap-1"><i data-lucide="calendar" class="w-3 h-3"></i>Meeting: ${new Date(entry.meetingAt).toLocaleString('en-US', { month: 'short', day: 'numeric', year: 'numeric', hour: 'numeric', minute: '2-digit' })}</p>` : ''}
+                ${entry.meetingLink ? `<p class="mt-1 text-[10px] flex items-center gap-1"><a href="${escapeHTML(entry.meetingLink)}" target="_blank" rel="noopener noreferrer" class="text-gold hover:underline truncate flex items-center gap-1"><i data-lucide="link" class="w-3 h-3 flex-shrink-0"></i>${escapeHTML(entry.meetingLink)}</a></p>` : ''}
+                <div class="mt-3 text-sm text-navy leading-relaxed break-words whitespace-pre-wrap">${escapeHTML(entry.note)}</div>
+              </div>
+            `}).join('')}
           </div>
         </section>
       `;
@@ -1068,7 +1158,69 @@ export function createContactsModule(onBack) {
     const inactive = 'text-steel hover:text-navy';
     modeDirectoryBtn.className = `inline-flex items-center gap-1.5 rounded-xl px-4 py-2 text-xs font-bold transition-all focus:outline-none ${contentMode === 'directory' ? active : inactive}`;
     modeMemosBtn.className = `inline-flex items-center gap-1.5 rounded-xl px-4 py-2 text-xs font-bold transition-all focus:outline-none ${contentMode === 'memos' ? active : inactive}`;
+    const addBtnSpan = addBtn.querySelector('span');
+    if (addBtnSpan) addBtnSpan.textContent = contentMode === 'memos' ? 'Add Memo' : 'Add Contact';
     renderViewToggle();
+  }
+
+  // ─── MEMO MODAL ───────────────────────────────────────────────────────────
+  function updateMemoFollowUpField() {
+    container.querySelector('#ct-memo-followup-field').classList.toggle('hidden', memoCategory !== 'follow-up');
+    container.querySelector('#ct-memo-meeting-fields').classList.toggle('hidden', memoCategory !== 'meeting');
+  }
+
+  function openMemoModal(entryId = null) {
+    if (!selectedMemoContactId) { showToast('Select a contact first.', 'error'); return; }
+    const c = contacts.find(x => x.id === selectedMemoContactId);
+    editingMemoId = entryId;
+    const isEdit = !!entryId;
+    const modalHeading = memoBackdrop.querySelector('h3');
+    if (modalHeading) modalHeading.textContent = `${isEdit ? 'Edit' : 'Log New'} Activity Memo${c ? ` for ${c.name}` : ''}`;
+    const entry = isEdit ? (c?.timeline || []).find(e => e.id === entryId) : null;
+    memoCategory = entry?.category || null;
+    container.querySelector('#ct-memo-category-select').value = memoCategory || '';
+    container.querySelector('#ct-memo-title').value = entry?.title || '';
+    container.querySelector('#ct-memo-content').value = entry?.note || '';
+    container.querySelector('#ct-memo-followup-dt').value = entry?.followUpAt || '';
+    container.querySelector('#ct-memo-meeting-dt').value = entry?.meetingAt || '';
+    container.querySelector('#ct-memo-meeting-link').value = entry?.meetingLink || '';
+    updateMemoFollowUpField();
+    showModal(memoBackdrop, memoInner);
+  }
+
+  function saveMemo() {
+    const title = container.querySelector('#ct-memo-title').value.trim();
+    const content = container.querySelector('#ct-memo-content').value.trim();
+    if (!content) { showToast('Content is required.', 'error'); return; }
+    const c = contacts.find(x => x.id === selectedMemoContactId);
+    if (!c) return;
+    if (!c.timeline) c.timeline = [];
+    if (editingMemoId) {
+      const entry = c.timeline.find(e => e.id === editingMemoId);
+      if (!entry) return;
+      entry.category = memoCategory || null;
+      entry.title = title;
+      entry.note = content;
+      entry.editedAt = new Date().toISOString();
+      entry.followUpAt = memoCategory === 'follow-up' ? (container.querySelector('#ct-memo-followup-dt').value || undefined) : undefined;
+      entry.meetingAt  = memoCategory === 'meeting'   ? (container.querySelector('#ct-memo-meeting-dt').value || undefined)   : undefined;
+      entry.meetingLink = memoCategory === 'meeting'  ? (container.querySelector('#ct-memo-meeting-link').value.trim() || undefined) : undefined;
+    } else {
+      const entry = { id: Date.now().toString(), category: memoCategory || null, title, note: content, timestamp: new Date().toISOString() };
+      if (memoCategory === 'follow-up') { const dt = container.querySelector('#ct-memo-followup-dt').value; if (dt) entry.followUpAt = dt; }
+      if (memoCategory === 'meeting') {
+        const dt = container.querySelector('#ct-memo-meeting-dt').value;
+        const link = container.querySelector('#ct-memo-meeting-link').value.trim();
+        if (dt) entry.meetingAt = dt;
+        if (link) entry.meetingLink = link;
+      }
+      c.timeline.push(entry);
+    }
+    saveContacts(contacts);
+    closeModal(memoBackdrop, memoInner);
+    showToast(editingMemoId ? 'Memo updated!' : 'Memo saved!', 'success');
+    editingMemoId = null;
+    renderContacts();
   }
 
   // ─── MODAL HELPERS ────────────────────────────────────────────────────────
@@ -1450,7 +1602,16 @@ export function createContactsModule(onBack) {
   viewGridBtn.addEventListener('click', () => { viewMode = 'grid'; renderContacts(); renderViewToggle(); });
   viewListBtn.addEventListener('click', () => { viewMode = 'list'; renderContacts(); renderViewToggle(); });
 
-  addBtn.addEventListener('click', openAddModal);
+  addBtn.addEventListener('click', () => { if (contentMode === 'memos') openMemoModal(); else openAddModal(); });
+
+  container.querySelector('#ct-memo-close').addEventListener('click', () => { editingMemoId = null; closeModal(memoBackdrop, memoInner); });
+  container.querySelector('#ct-memo-cancel').addEventListener('click', () => { editingMemoId = null; closeModal(memoBackdrop, memoInner); });
+  container.querySelector('#ct-memo-save').addEventListener('click', saveMemo);
+  container.querySelector('#ct-memo-category-select').addEventListener('change', (e) => {
+    memoCategory = e.target.value || null;
+    updateMemoFollowUpField();
+  });
+
   container.querySelector('#ct-empty-add-btn').addEventListener('click', () => {
     if (container.querySelector('#ct-empty-add-btn').dataset.mode === 'clear-filters') {
       activeFilter = 'all';
@@ -1766,12 +1927,38 @@ export function createContactsModule(onBack) {
       if (action === 'call' || action === 'email') { return; }
       if (action === 'select-memo-contact') {
         selectedMemoContactId = id;
+        pendingDeleteMemoId = null;
         renderContacts();
         return;
       }
       if (action === 'toggle-fav') { toggleFavorite(id); return; }
       if (action === 'edit')       { openEditModal(id);   return; }
       if (action === 'delete')     { openDeleteModal(id); return; }
+      if (action === 'edit-memo') {
+        selectedMemoContactId = id;
+        openMemoModal(actionBtn.getAttribute('data-entry-id'));
+        return;
+      }
+      if (action === 'delete-memo') {
+        pendingDeleteMemoId = actionBtn.getAttribute('data-entry-id');
+        renderContacts();
+        return;
+      }
+      if (action === 'cancel-delete-memo') {
+        pendingDeleteMemoId = null;
+        renderContacts();
+        return;
+      }
+      if (action === 'confirm-delete-memo') {
+        const c = contacts.find(x => x.id === id);
+        if (!c) return;
+        c.timeline = (c.timeline || []).filter(e => e.id !== actionBtn.getAttribute('data-entry-id'));
+        pendingDeleteMemoId = null;
+        saveContacts(contacts);
+        showToast('Memo deleted.', 'success');
+        renderContacts();
+        return;
+      }
       return;
     }
     const card = e.target.closest('[data-action="open-detail"]');
