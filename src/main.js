@@ -618,7 +618,7 @@ function getSettingsContentMarkup() {
         </div>
 
         <div id="settings-categories-backdrop" class="fixed inset-0 z-[120] hidden items-center justify-center bg-navy/60 p-4 opacity-0 backdrop-blur-sm transition-all duration-200">
-          <div id="settings-categories-panel" class="relative mx-auto w-full max-w-2xl overflow-hidden rounded-[1.8rem] border border-softBlue2 bg-white shadow-[0_30px_80px_rgba(15,23,42,0.25)] transform scale-95 transition-all duration-200">
+          <div id="settings-categories-panel" class="relative mx-auto w-full max-w-2xl flex flex-col max-h-[85vh] overflow-hidden rounded-[1.8rem] border border-softBlue2 bg-white shadow-[0_30px_80px_rgba(15,23,42,0.25)] transform scale-95 transition-all duration-200">
             <div class="flex items-center justify-between border-b border-softBlue1 px-6 py-5">
               <div>
                 <p class="text-[11px] font-bold uppercase tracking-[0.18em] text-gold">Category Manager</p>
@@ -628,21 +628,19 @@ function getSettingsContentMarkup() {
                 <i class="fa-solid fa-xmark text-sm"></i>
               </button>
             </div>
-            <div class="space-y-5 px-6 py-6">
-              <div class="rounded-[1.4rem] border border-softBlue2 bg-[#f8fbff] p-4">
+            <div class="flex flex-col flex-1 overflow-hidden">
+              <div class="px-6 pt-5 pb-4 border-b border-softBlue1">
                 <p class="text-[11px] font-bold uppercase tracking-[0.18em] text-steel">Add Category</p>
-                <div class="mt-3 flex flex-col gap-3 sm:flex-row">
-                  <input id="settings-new-category-name" type="text" placeholder="New category name" class="flex-1 rounded-2xl border border-softBlue2 bg-white px-4 py-3 text-sm text-navy placeholder-slate-400 focus:outline-none focus:border-steel">
-                  <button id="settings-add-category-btn" type="button" class="rounded-2xl bg-navy px-5 py-3 text-sm font-bold text-white hover:bg-steel transition">Add Category</button>
+                <div class="mt-2 flex gap-2">
+                  <input id="settings-new-category-name" type="text" placeholder="New category name" class="flex-1 rounded-2xl border border-softBlue2 bg-white px-4 py-2.5 text-sm text-navy placeholder-slate-400 focus:outline-none focus:border-steel">
+                  <button id="settings-add-category-btn" type="button" class="rounded-2xl bg-navy px-5 py-2.5 text-sm font-bold text-white hover:bg-steel transition">Add Category</button>
                 </div>
               </div>
-              <div>
-                <div class="flex items-center justify-between">
-                  <p class="text-[11px] font-bold uppercase tracking-[0.18em] text-steel">Current Categories</p>
-                  <p class="text-xs text-steel">Delete will move links into Unassigned until you reassign them.</p>
-                </div>
-                <div id="settings-categories-list" class="mt-3 space-y-2"></div>
+              <div class="flex items-center justify-between px-6 pt-4 pb-2">
+                <p class="text-[11px] font-bold uppercase tracking-[0.18em] text-steel">Current Categories</p>
+                <p class="text-xs text-steel">Delete will move links into Unassigned until you reassign them.</p>
               </div>
+              <div id="settings-categories-list" class="overflow-y-auto flex-1 px-6 pb-6 space-y-2"></div>
             </div>
 
           </div>
@@ -1180,35 +1178,32 @@ function setupLinksManager() {
       const isDeletePending = pendingDeleteCategoryKey === category.key;
 
       return `
-        <div class="settings-category-row rounded-[1.35rem] border border-softBlue2 bg-[#f8fbff] p-4" data-category-key="${escapeHTML(category.key)}">
-          <div class="flex flex-col gap-3 lg:flex-row lg:items-center">
-            <div data-category-drag-handle class="cursor-grab active:cursor-grabbing text-slate-300 hover:text-steel select-none touch-none self-start lg:self-center" title="Drag to reorder">
+        <div class="settings-category-row rounded-2xl border border-softBlue2 bg-[#f8fbff] px-3 py-2.5" data-category-key="${escapeHTML(category.key)}">
+          <div class="flex items-center gap-2">
+            <div data-category-drag-handle class="cursor-grab active:cursor-grabbing text-slate-300 hover:text-steel select-none touch-none flex-shrink-0" title="Drag to reorder">
               <i class="fa-solid fa-grip-vertical"></i>
             </div>
-            <div class="flex-1">
-              <label class="block text-[11px] font-bold uppercase tracking-[0.18em] text-steel">Category Name</label>
-              <input
-                type="text"
-                value="${escapeHTML(category.label)}"
-                data-category-rename="${category.key}"
-                class="mt-2 w-full rounded-2xl border border-softBlue2 bg-white px-4 py-3 text-sm font-semibold text-navy placeholder-slate-400 focus:outline-none focus:border-steel"
-              >
-              <p class="mt-2 text-xs text-steel">${linkCount} link${linkCount === 1 ? '' : 's'}</p>
+            <div class="flex-1 min-w-0">
+              <div class="flex items-center gap-2">
+                <input
+                  type="text"
+                  value="${escapeHTML(category.label)}"
+                  data-category-rename="${category.key}"
+                  class="flex-1 min-w-0 rounded-xl border border-softBlue2 bg-white px-3 py-1.5 text-sm font-semibold text-navy placeholder-slate-400 focus:outline-none focus:border-steel"
+                >
+                <span class="text-xs text-steel whitespace-nowrap flex-shrink-0">${linkCount} link${linkCount === 1 ? '' : 's'}</span>
+              </div>
             </div>
-            <div class="flex flex-col gap-2 lg:min-w-[220px]">
+            <div class="flex items-center gap-1.5 flex-shrink-0">
               ${isDeletePending ? `
-                <div class="flex items-center justify-between gap-3 rounded-2xl border border-[#7a2331] bg-[#39131b] px-4 py-3 text-sm">
-                  <span class="font-semibold text-[#ffd2db]">Deleted links move to ${UNASSIGNED_LINK_CATEGORY_LABEL}</span>
-                  <div class="flex items-center gap-3">
-                    <button type="button" data-category-delete-cancel="${category.key}" class="text-sm font-bold text-[#cfdaf1] transition hover:text-white">Cancel</button>
-                    <button type="button" data-category-delete-confirm="${category.key}" class="text-sm font-bold text-[#ff6b76] transition hover:text-[#ff8f99]">Delete</button>
-                  </div>
+                <div class="flex items-center gap-2 rounded-xl border border-[#7a2331] bg-[#39131b] px-3 py-1.5 text-xs">
+                  <span class="font-semibold text-[#ffd2db] whitespace-nowrap">Move to ${UNASSIGNED_LINK_CATEGORY_LABEL}?</span>
+                  <button type="button" data-category-delete-cancel="${category.key}" class="font-bold text-[#cfdaf1] transition hover:text-white">Cancel</button>
+                  <button type="button" data-category-delete-confirm="${category.key}" class="font-bold text-[#ff6b76] transition hover:text-[#ff8f99]">Delete</button>
                 </div>
               ` : `
-                <div class="flex gap-2">
-                  <button type="button" data-category-save="${category.key}" class="flex-1 rounded-2xl border border-softBlue2 px-4 py-2.5 text-sm font-bold text-navy transition hover:bg-softBlue1">Save</button>
-                  <button type="button" data-category-delete="${category.key}" class="flex-1 rounded-2xl bg-red-50 px-4 py-2.5 text-sm font-bold text-red-600 transition hover:bg-red-100">Delete</button>
-                </div>
+                <button type="button" data-category-save="${category.key}" class="rounded-xl border border-softBlue2 px-3 py-1.5 text-xs font-bold text-navy transition hover:bg-softBlue1">Save</button>
+                <button type="button" data-category-delete="${category.key}" class="rounded-xl bg-red-50 px-3 py-1.5 text-xs font-bold text-red-600 transition hover:bg-red-100">Delete</button>
               `}
             </div>
           </div>
