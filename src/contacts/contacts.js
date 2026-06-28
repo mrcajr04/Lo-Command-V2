@@ -39,6 +39,8 @@ export function createContactsModule(onBack) {
   let memoCategory = null;
   let editingMemoId = null;
   let pendingDeleteMemoId = null;
+  let memoContactSearch = '';
+  let memoFiltersWrap = null;
 
   container.innerHTML = `
   <div id="ct-toast" class="fixed bottom-6 right-6 z-[60] flex flex-col space-y-3 max-w-sm w-full pointer-events-none"></div>
@@ -868,6 +870,11 @@ export function createContactsModule(onBack) {
     importBtn.className = 'inline-flex items-center gap-2 rounded-xl border border-softBlue2 bg-white px-4 py-3 text-sm font-semibold text-navy transition hover:bg-softBlue1 focus:outline-none';
     rightControls.append(exportBtn, importBtn.parentElement);
 
+    memoFiltersWrap = document.createElement('div');
+    memoFiltersWrap.id = 'ct-memo-filters-wrap';
+    memoFiltersWrap.className = 'hidden flex flex-wrap gap-2 flex-1';
+    leftControls.appendChild(memoFiltersWrap);
+
     toolbarControls.replaceChildren(leftControls, rightControls);
 
     pillBar.className = 'bg-white rounded-2xl border border-softBlue2 p-3 shadow-sm flex flex-col lg:flex-row lg:items-center lg:justify-between gap-3 flex-shrink-0';
@@ -880,7 +887,6 @@ export function createContactsModule(onBack) {
 
   function getMemoContacts() {
     return getFiltered()
-      .filter(contact => (contact.timeline || []).length > 0)
       .map(contact => {
         const entries = (contact.timeline || []).slice().sort((a, b) => new Date(b.timestamp) - new Date(a.timestamp));
         return {
@@ -983,12 +989,18 @@ export function createContactsModule(onBack) {
           <div class="px-4 py-3 border-b border-softBlue1 bg-lightGray/60 flex items-center justify-between">
             <div>
               <p class="text-[10px] font-bold uppercase tracking-[0.18em] text-steel">Contacts List</p>
-              <p class="text-sm font-bold text-navy mt-1">${memoContacts.length} active timelines</p>
+              <p class="text-sm font-bold text-navy mt-1">${memoContacts.length} contact${memoContacts.length !== 1 ? 's' : ''}</p>
             </div>
             <span class="inline-flex items-center justify-center min-w-7 h-7 px-2 rounded-full bg-softBlue1 text-navy text-xs font-bold border border-softBlue2">${memoContacts.length}</span>
           </div>
+          <div class="px-3 py-2 border-b border-softBlue1 bg-lightGray/30">
+            <div class="flex items-center gap-2 bg-white border border-softBlue2 rounded-lg px-3 py-1.5">
+              <i data-lucide="search" class="w-3.5 h-3.5 text-steel flex-shrink-0"></i>
+              <input id="ct-memo-contact-search" type="text" placeholder="Search contacts..." value="${escapeHTML(memoContactSearch)}" class="flex-1 text-xs text-navy placeholder-steel/60 bg-transparent focus:outline-none" />
+            </div>
+          </div>
           <div class="max-h-[70vh] overflow-y-auto custom-scrollbar">
-            ${memoContacts.map(contact => {
+            ${memoContacts.filter(c => !memoContactSearch || c.name.toLowerCase().includes(memoContactSearch.toLowerCase())).map(contact => {
               const { bg, text } = getAvatarPalette(contact.name);
               const isActive = contact.id === activeMemoContact.id;
               const contactSubtitle = [contact.role, contact.company].filter(Boolean).join(' · ') || 'Personal Contact';
@@ -1046,7 +1058,14 @@ export function createContactsModule(onBack) {
               <div class="text-xs font-semibold text-steel whitespace-nowrap">${activeMemoContact.memoCount} activity memos</div>
             </div>
           </div>
-          <div class="p-5 space-y-4 bg-softBlue1/35">
+          <div class="px-5 pt-5 pb-6 bg-softBlue1/35">
+            ${activeMemoContact.timelineEntries.length === 0 ? `
+            <div class="flex flex-col items-center justify-center py-10 text-center">
+              <i data-lucide="notebook-pen" class="w-8 h-8 text-steel/40 mb-3"></i>
+              <p class="text-sm font-semibold text-steel">No memos yet for ${escapeHTML(activeMemoContact.name)}.</p>
+              <p class="text-xs text-steel/60 mt-1">Click "Add Memo" to log the first one.</p>
+            </div>` : `
+            <div class="relative pl-4 space-y-4 border-l-2 border-softBlue2/80">
             ${activeMemoContact.timelineEntries.map(entry => {
               const catMeta = {
                 'follow-up': { label: 'Follow Up', icon: 'clock', color: 'bg-amber/10 text-amber border-amber/30' },
@@ -1059,43 +1078,47 @@ export function createContactsModule(onBack) {
               const createdStr = new Date(entry.timestamp).toLocaleString('en-US', { month: 'short', day: 'numeric', year: 'numeric', hour: 'numeric', minute: '2-digit' });
               const editedStr = entry.editedAt ? new Date(entry.editedAt).toLocaleString('en-US', { month: 'short', day: 'numeric', year: 'numeric', hour: 'numeric', minute: '2-digit' }) : null;
               return `
-              <div class="bg-white border border-softBlue2 rounded-2xl p-4 shadow-sm">
-                <div class="flex items-start justify-between gap-3 mb-2.5">
-                  <div class="flex flex-wrap items-center gap-1.5 text-[10px] text-steel min-w-0">
-                    <i data-lucide="clock" class="w-3 h-3 flex-shrink-0"></i>
-                    <span class="font-semibold whitespace-nowrap">${createdStr}</span>
-                    ${editedStr ? `<span class="text-steel/50">·</span><i data-lucide="pencil" class="w-2.5 h-2.5 flex-shrink-0 opacity-50"></i><span class="text-steel/70 whitespace-nowrap">Last edited ${editedStr}</span>` : ''}
+              <div class="relative pb-1">
+                <span class="absolute -left-[21px] top-1.5 flex h-3 w-3 rounded-full bg-gold border border-white ring-4 ring-white"></span>
+                <div class="bg-white border border-softBlue2 rounded-2xl p-4 shadow-sm">
+                  <div class="flex items-start justify-between gap-3 mb-2.5">
+                    <div class="flex flex-wrap items-center gap-1.5 text-[10px] text-steel min-w-0">
+                      <i data-lucide="clock" class="w-3 h-3 flex-shrink-0"></i>
+                      <span class="font-semibold whitespace-nowrap">${createdStr}</span>
+                      ${editedStr ? `<span class="text-steel/50">·</span><i data-lucide="pencil" class="w-2.5 h-2.5 flex-shrink-0 opacity-50"></i><span class="text-steel/70 whitespace-nowrap">Last edited ${editedStr}</span>` : ''}
+                    </div>
+                    ${pendingDeleteMemoId === entry.id ? `
+                    <div class="flex items-center gap-2 flex-shrink-0">
+                      <span class="text-[11px] font-semibold text-red-500">This will remove this memo.</span>
+                      <button type="button" data-action="cancel-delete-memo" data-entry-id="${entry.id}" class="text-[11px] font-bold text-steel hover:text-navy transition focus:outline-none">Cancel</button>
+                      <button type="button" data-action="confirm-delete-memo" data-id="${activeMemoContact.id}" data-entry-id="${entry.id}" class="text-[11px] font-bold text-red-500 hover:text-red-700 transition focus:outline-none">Delete</button>
+                    </div>
+                    ` : `
+                    <div class="flex items-center gap-1 flex-shrink-0">
+                      <button type="button" data-action="edit-memo" data-id="${activeMemoContact.id}" data-entry-id="${entry.id}" class="p-1.5 rounded-lg text-steel hover:text-navy hover:bg-softBlue1 transition focus:outline-none" title="Edit memo">
+                        <i data-lucide="pencil" class="w-3.5 h-3.5"></i>
+                      </button>
+                      <button type="button" data-action="delete-memo" data-id="${activeMemoContact.id}" data-entry-id="${entry.id}" class="p-1.5 rounded-lg text-steel hover:text-red-500 hover:bg-red-50 transition focus:outline-none" title="Delete memo">
+                        <i data-lucide="trash-2" class="w-3.5 h-3.5"></i>
+                      </button>
+                    </div>
+                    `}
                   </div>
-                  ${pendingDeleteMemoId === entry.id ? `
-                  <div class="flex items-center gap-2 flex-shrink-0">
-                    <span class="text-[11px] font-semibold text-red-500">This will remove this memo.</span>
-                    <button type="button" data-action="cancel-delete-memo" data-entry-id="${entry.id}" class="text-[11px] font-bold text-steel hover:text-navy transition focus:outline-none">Cancel</button>
-                    <button type="button" data-action="confirm-delete-memo" data-id="${activeMemoContact.id}" data-entry-id="${entry.id}" class="text-[11px] font-bold text-red-500 hover:text-red-700 transition focus:outline-none">Delete</button>
+                  <div class="flex items-center gap-2 min-w-0">
+                    <span class="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-[10px] font-bold border flex-shrink-0 ${catMeta.color}">
+                      <i data-lucide="${catMeta.icon}" class="w-3 h-3"></i>
+                      ${catMeta.label}
+                    </span>
+                    ${displayTitle ? `<span class="text-sm font-bold text-navy truncate">${escapeHTML(displayTitle)}</span>` : ''}
                   </div>
-                  ` : `
-                  <div class="flex items-center gap-1 flex-shrink-0">
-                    <button type="button" data-action="edit-memo" data-id="${activeMemoContact.id}" data-entry-id="${entry.id}" class="p-1.5 rounded-lg text-steel hover:text-navy hover:bg-softBlue1 transition focus:outline-none" title="Edit memo">
-                      <i data-lucide="pencil" class="w-3.5 h-3.5"></i>
-                    </button>
-                    <button type="button" data-action="delete-memo" data-id="${activeMemoContact.id}" data-entry-id="${entry.id}" class="p-1.5 rounded-lg text-steel hover:text-red-500 hover:bg-red-50 transition focus:outline-none" title="Delete memo">
-                      <i data-lucide="trash-2" class="w-3.5 h-3.5"></i>
-                    </button>
-                  </div>
-                  `}
+                  ${entry.followUpAt ? `<p class="mt-2 text-[10px] font-semibold text-amber flex items-center gap-1"><i data-lucide="clock" class="w-3 h-3"></i>Follow up: ${new Date(entry.followUpAt).toLocaleString('en-US', { month: 'short', day: 'numeric', year: 'numeric', hour: 'numeric', minute: '2-digit' })}</p>` : ''}
+                  ${entry.meetingAt ? `<p class="mt-2 text-[10px] font-semibold text-navy flex items-center gap-1"><i data-lucide="calendar" class="w-3 h-3"></i>Meeting: ${new Date(entry.meetingAt).toLocaleString('en-US', { month: 'short', day: 'numeric', year: 'numeric', hour: 'numeric', minute: '2-digit' })}</p>` : ''}
+                  ${entry.meetingLink ? `<p class="mt-1 text-[10px] flex items-center gap-1"><a href="${escapeHTML(entry.meetingLink)}" target="_blank" rel="noopener noreferrer" class="text-gold hover:underline truncate flex items-center gap-1"><i data-lucide="link" class="w-3 h-3 flex-shrink-0"></i>${escapeHTML(entry.meetingLink)}</a></p>` : ''}
+                  <div class="mt-3 text-sm text-navy leading-relaxed break-words whitespace-pre-wrap">${escapeHTML(entry.note)}</div>
                 </div>
-                <div class="flex items-center gap-2 min-w-0">
-                  <span class="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-[10px] font-bold border flex-shrink-0 ${catMeta.color}">
-                    <i data-lucide="${catMeta.icon}" class="w-3 h-3"></i>
-                    ${catMeta.label}
-                  </span>
-                  ${displayTitle ? `<span class="text-sm font-bold text-navy truncate">${escapeHTML(displayTitle)}</span>` : ''}
-                </div>
-                ${entry.followUpAt ? `<p class="mt-2 text-[10px] font-semibold text-amber flex items-center gap-1"><i data-lucide="clock" class="w-3 h-3"></i>Follow up: ${new Date(entry.followUpAt).toLocaleString('en-US', { month: 'short', day: 'numeric', year: 'numeric', hour: 'numeric', minute: '2-digit' })}</p>` : ''}
-                ${entry.meetingAt ? `<p class="mt-2 text-[10px] font-semibold text-navy flex items-center gap-1"><i data-lucide="calendar" class="w-3 h-3"></i>Meeting: ${new Date(entry.meetingAt).toLocaleString('en-US', { month: 'short', day: 'numeric', year: 'numeric', hour: 'numeric', minute: '2-digit' })}</p>` : ''}
-                ${entry.meetingLink ? `<p class="mt-1 text-[10px] flex items-center gap-1"><a href="${escapeHTML(entry.meetingLink)}" target="_blank" rel="noopener noreferrer" class="text-gold hover:underline truncate flex items-center gap-1"><i data-lucide="link" class="w-3 h-3 flex-shrink-0"></i>${escapeHTML(entry.meetingLink)}</a></p>` : ''}
-                <div class="mt-3 text-sm text-navy leading-relaxed break-words whitespace-pre-wrap">${escapeHTML(entry.note)}</div>
               </div>
             `}).join('')}
+            </div>`}
           </div>
         </section>
       `;
@@ -1153,6 +1176,63 @@ export function createContactsModule(onBack) {
     viewGridBtn.parentElement.classList.toggle('hidden', hidden);
   }
 
+  function renderMemoFilterDropdowns() {
+    const wrap = memoFiltersWrap || container.querySelector('#ct-memo-filters-wrap');
+    if (!wrap) return;
+
+    const curRole   = advancedFilters.roles[0] || '';
+    const curTag    = advancedFilters.tags[0] || '';
+    const curStatus = advancedFilters.activityStatuses[0] || '';
+
+    // Role options — all contacts
+    const allRoles = [...new Set(contacts.map(c => c.role).filter(Boolean))].sort();
+
+    // Tag options — narrowed by selected role
+    const roleFiltered = curRole
+      ? contacts.filter(c => String(c.role || '').trim() === curRole)
+      : contacts;
+    const availableTags = [...new Set(roleFiltered.flatMap(c => c.tags || []).filter(Boolean))].sort();
+
+    // Activity status options — narrowed by role + tag, only show statuses with at least 1 match
+    const roleTagFiltered = curTag
+      ? roleFiltered.filter(c => (c.tags || []).includes(curTag))
+      : roleFiltered;
+    const allActivityOptions = [
+      { value: 'hasActivity',      label: 'Has activity memo' },
+      { value: 'noActivity',       label: 'No activity memo' },
+      { value: 'recentlyActive',   label: 'Recently active' },
+      { value: 'noRecentActivity', label: 'No recent activity' },
+    ];
+    const availableStatuses = allActivityOptions.filter(o =>
+      roleTagFiltered.some(c => matchesActivityStatus(c, o.value))
+    );
+
+    const makeDropdown = (id, placeholder, options, current) => {
+      const opts = options.map(o => {
+        const val = typeof o === 'string' ? o : o.value;
+        const lbl = typeof o === 'string' ? o : o.label;
+        return `<option value="${escapeHTML(val)}" ${current === val ? 'selected' : ''}>${escapeHTML(lbl)}</option>`;
+      }).join('');
+      return `
+        <div class="flex items-center gap-1">
+          <div class="relative">
+            <select id="${id}" class="appearance-none rounded-xl border ${current ? 'border-navy' : 'border-softBlue2'} bg-white pl-3 pr-8 py-2.5 text-sm font-semibold ${current ? 'text-navy' : 'text-steel'} focus:outline-none focus:ring-2 focus:ring-steel cursor-pointer transition">
+              <option value="">${placeholder}</option>
+              ${opts}
+            </select>
+            <i data-lucide="chevron-down" class="pointer-events-none absolute right-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-steel"></i>
+          </div>
+          ${current ? `<button type="button" data-memo-filter-clear="${id}" class="p-1 rounded-lg text-steel hover:text-navy hover:bg-softBlue1 transition focus:outline-none" title="Clear"><i data-lucide="x" class="w-3.5 h-3.5"></i></button>` : ''}
+        </div>`;
+    };
+
+    wrap.innerHTML =
+      makeDropdown('ct-memo-filter-role',   'Role',            allRoles,          curRole)   +
+      makeDropdown('ct-memo-filter-tag',    'Tags',            availableTags,     curTag)    +
+      makeDropdown('ct-memo-filter-status', 'Activity Status', availableStatuses, curStatus);
+    if (window.lucide) window.lucide.createIcons();
+  }
+
   function renderContentModeToggle() {
     const active = 'bg-white text-navy shadow-sm';
     const inactive = 'text-steel hover:text-navy';
@@ -1160,6 +1240,16 @@ export function createContactsModule(onBack) {
     modeMemosBtn.className = `inline-flex items-center gap-1.5 rounded-xl px-4 py-2 text-xs font-bold transition-all focus:outline-none ${contentMode === 'memos' ? active : inactive}`;
     const addBtnSpan = addBtn.querySelector('span');
     if (addBtnSpan) addBtnSpan.textContent = contentMode === 'memos' ? 'Add Memo' : 'Add Contact';
+    const inMemos = contentMode === 'memos';
+    const searchWrapEl = searchInput?.parentElement;
+    const filterWrapEl = filterBtn?.parentElement;
+    const memoWrap = memoFiltersWrap || container.querySelector('#ct-memo-filters-wrap');
+    if (searchWrapEl) searchWrapEl.classList.toggle('hidden', inMemos);
+    if (filterWrapEl) filterWrapEl.classList.toggle('hidden', inMemos);
+    if (memoWrap) {
+      memoWrap.classList.toggle('hidden', !inMemos);
+      if (inMemos) renderMemoFilterDropdowns();
+    }
     renderViewToggle();
   }
 
@@ -1596,7 +1686,7 @@ export function createContactsModule(onBack) {
     e.stopPropagation();
     toggleFilterFlyout();
   });
-  modeDirectoryBtn.addEventListener('click', () => { contentMode = 'directory'; renderContentModeToggle(); renderContacts(); });
+  modeDirectoryBtn.addEventListener('click', () => { contentMode = 'directory'; memoContactSearch = ''; renderContentModeToggle(); renderContacts(); });
   modeMemosBtn.addEventListener('click', () => { contentMode = 'memos'; renderContentModeToggle(); renderContacts(); });
   sortSelect.addEventListener('change', (e) => { sortMode = e.target.value; renderContacts(); });
   viewGridBtn.addEventListener('click', () => { viewMode = 'grid'; renderContacts(); renderViewToggle(); });
@@ -1639,6 +1729,40 @@ export function createContactsModule(onBack) {
     if (!trigger) return;
     activeFilterFlyoutGroup = trigger.getAttribute('data-filter-menu-trigger');
     renderFilterFlyout();
+  });
+
+  toolbarControls.addEventListener('change', (e) => {
+    const sel = e.target.closest('#ct-memo-filter-role, #ct-memo-filter-tag, #ct-memo-filter-status');
+    if (!sel) return;
+    if (sel.id === 'ct-memo-filter-role') {
+      advancedFilters.roles = sel.value ? [sel.value] : [];
+      advancedFilters.tags = [];
+      advancedFilters.activityStatuses = [];
+    } else if (sel.id === 'ct-memo-filter-tag') {
+      advancedFilters.tags = sel.value ? [sel.value] : [];
+      advancedFilters.activityStatuses = [];
+    } else if (sel.id === 'ct-memo-filter-status') {
+      advancedFilters.activityStatuses = sel.value ? [sel.value] : [];
+    }
+    renderMemoFilterDropdowns();
+    renderContacts();
+  });
+
+  toolbarControls.addEventListener('click', (e) => {
+    const btn = e.target.closest('[data-memo-filter-clear]');
+    if (!btn) return;
+    if (btn.dataset.memoFilterClear === 'ct-memo-filter-role') {
+      advancedFilters.roles = [];
+      advancedFilters.tags = [];
+      advancedFilters.activityStatuses = [];
+    } else if (btn.dataset.memoFilterClear === 'ct-memo-filter-tag') {
+      advancedFilters.tags = [];
+      advancedFilters.activityStatuses = [];
+    } else if (btn.dataset.memoFilterClear === 'ct-memo-filter-status') {
+      advancedFilters.activityStatuses = [];
+    }
+    renderMemoFilterDropdowns();
+    renderContacts();
   });
 
   filterFlyoutOptions?.addEventListener('change', (e) => {
@@ -1899,6 +2023,16 @@ export function createContactsModule(onBack) {
   deleteBackdrop.addEventListener('click', (e) => { if (e.target === deleteBackdrop) closeDeleteModal(); });
 
   // Contact grid/list (event delegation)
+  contactsContainer.addEventListener('input', (e) => {
+    if (e.target.id === 'ct-memo-contact-search') {
+      memoContactSearch = e.target.value;
+      const cursor = e.target.selectionStart;
+      renderContacts();
+      const newInput = contactsContainer.querySelector('#ct-memo-contact-search');
+      if (newInput) { newInput.focus(); newInput.setSelectionRange(cursor, cursor); }
+    }
+  });
+
   contactsContainer.addEventListener('click', (e) => {
     const actionBtn = e.target.closest('[data-action]:not([data-action="open-detail"])');
     if (actionBtn) {
