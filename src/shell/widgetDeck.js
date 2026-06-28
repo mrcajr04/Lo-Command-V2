@@ -2,9 +2,16 @@
  * Shell Widget Deck Component
  * Self-contained module managing the right utility drawer.
  */
+import { loadContacts } from '../contacts/storage.js';
 
 const faviconCache = new Map();
 const UNASSIGNED_LINK_CATEGORY = 'unassigned';
+
+function getInitials(name = '') {
+  const parts = String(name).trim().split(/\s+/).filter(Boolean);
+  if (parts.length === 0) return '?';
+  return parts.slice(0, 2).map((part) => part[0]?.toUpperCase() || '').join('');
+}
 
 function getFaviconCandidates(url, altFaviconDomain = '') {
   function fromDomain(value) {
@@ -343,6 +350,13 @@ export function createWidgetDeck() {
     }
   }
 
+  function loadFavoriteContacts() {
+    const contacts = loadContacts() || [];
+    return Array.isArray(contacts)
+      ? contacts.filter((contact) => contact.favorite)
+      : [];
+  }
+
   // Configuration and rendering rules for each widget type
   const widgetDefinitions = {
     contacts: {
@@ -350,27 +364,22 @@ export function createWidgetDeck() {
       title: 'Favorite Contacts',
       iconClass: 'fa-solid fa-user-group text-gold text-xs mr-1.5',
       render: () => {
-        const contacts = [
-          { initials: 'SJ', name: 'Sarah Jenkins', phone: '(555) 019-2834', email: 's.jenkins@mlghome.com' },
-          { initials: 'MV', name: 'Marcus Vance', phone: '(555) 014-9921', email: 'm.vance@mlghome.com' },
-          { initials: 'DP', name: 'Diana Prince', phone: '(555) 017-8833', email: 'diana@princeholdings.co' },
-          { initials: 'DM', name: 'David Miller', phone: '(555) 015-4409', email: 'dmiller@fidelitytitle.com' }
-        ];
+        const contacts = loadFavoriteContacts();
 
         return `
           <div class="space-y-2 py-1 text-[11px] text-slate-300">
-            ${contacts.map(c => `
+            ${contacts.length === 0 ? `<span class="text-[10px] text-slate-400">No favorite contacts yet.</span>` : contacts.map(c => `
               <div class="flex items-center justify-between py-1 border-b border-steel/15">
                 <div class="flex items-center gap-2">
                   <span class="h-6 w-6 rounded bg-steel/30 text-white font-bold text-[10px] flex items-center justify-center border border-steel/40 flex-shrink-0">
-                    ${c.initials}
+                    ${getInitials(c.name)}
                   </span>
                   <div class="truncate">
                     <p class="font-semibold text-white truncate leading-tight">${c.name}</p>
-                    <p class="text-[9px] text-slate-400 mt-0.5"><i class="fa-solid fa-phone mr-1 opacity-70"></i>${c.phone}</p>
+                    <p class="text-[9px] text-slate-400 mt-0.5"><i class="fa-solid fa-phone mr-1 opacity-70"></i>${c.phone || 'No phone'}</p>
                   </div>
                 </div>
-                <a href="mailto:${c.email}" class="text-gold hover:text-white transition text-[9px] ml-2">
+                <a href="${c.email ? `mailto:${c.email}` : `tel:${c.phone || ''}`}" class="text-gold hover:text-white transition text-[9px] ml-2 ${!c.email && !c.phone ? 'pointer-events-none opacity-40' : ''}">
                   <i class="fa-solid fa-envelope text-[11px]"></i>
                 </a>
               </div>
@@ -623,6 +632,7 @@ export function createWidgetDeck() {
     dropdown.classList.add('hidden');
   });
 
+  window.addEventListener('contacts-updated', updateDeck);
   window.addEventListener('workspace-links-updated', updateDeck);
 
   // Re-render and update widgets container

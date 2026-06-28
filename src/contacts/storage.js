@@ -110,6 +110,9 @@ export function loadContacts() {
 
 export function saveContacts(contacts) {
   setItem(CONTACTS_KEY, contacts);
+  if (typeof window !== 'undefined') {
+    window.dispatchEvent(new CustomEvent('contacts-updated'));
+  }
 }
 
 export function resetContactsToDefault() {
