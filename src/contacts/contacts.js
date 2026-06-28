@@ -18,14 +18,18 @@ export function createContactsModule(onBack) {
   let importCandidates = []; // { contact, isDuplicate, dupReason, selected }
   let pendingCsvSource = 'outlook'; // which CSV parser to use for the next file pick
   let sortMode = 'alpha-asc';
-  let viewMode = 'grid';
+  let viewMode = 'list';
   let contentMode = 'directory';
   let selectedMemoContactId = null;
   let detailContactId = null;
   let pendingDeleteId = null;
   let editingNoteId = null;
+  let selectedContactIds = new Set();
   let formTags = [];
   let formCategory = 'business';
+  let advancedFilters = createEmptyAdvancedFilters();
+  let isFilterFlyoutOpen = false;
+  let activeFilterFlyoutGroup = 'roles';
   // Scroll thresholds (px) for the progressive compact header — measured per contact
   let compactThresholds = { contact: 9999, notes: 9999 };
   let compactHasNotes = false;
@@ -42,7 +46,7 @@ export function createContactsModule(onBack) {
   <main class="flex-grow flex flex-col gap-5 overflow-hidden px-6 pb-6 pt-0">
 
     <!-- Search / Sort / View row -->
-    <div class="bg-white rounded-xl border border-softBlue2 p-4 shadow-sm flex flex-col md:flex-row gap-4 items-center justify-between flex-shrink-0">
+    <div id="ct-toolbar-controls" class="bg-white rounded-xl border border-softBlue2 p-4 shadow-sm flex flex-col md:flex-row gap-4 items-center justify-between flex-shrink-0">
       <div class="flex w-full flex-col xl:flex-row xl:items-center gap-3 xl:flex-1">
         <div class="inline-flex items-center rounded-xl border border-softBlue2 bg-lightGray p-1 flex-shrink-0">
           <button id="ct-mode-directory" class="inline-flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-xs font-bold transition-all focus:outline-none">
@@ -106,7 +110,7 @@ export function createContactsModule(onBack) {
     </div>
 
     <!-- Filter pills -->
-    <div class="flex flex-shrink-0 flex-wrap items-center gap-2">
+    <div id="ct-pill-bar" class="flex flex-shrink-0 flex-wrap items-center gap-2">
       <div id="ct-filter-pills" class="flex flex-wrap items-center gap-2 min-w-0"></div>
       <button id="ct-add-btn" class="inline-flex items-center justify-center gap-2 rounded-full bg-navy px-4 py-2 text-sm font-bold text-white border border-navy shadow-sm transition-all hover:bg-steel hover:border-steel focus:outline-none flex-shrink-0">
         <i data-lucide="plus" class="w-4 h-4"></i>
@@ -149,6 +153,21 @@ export function createContactsModule(onBack) {
 
       <form id="ct-contact-form" class="p-6 space-y-4 overflow-y-auto flex-grow custom-scrollbar">
         <input type="hidden" id="form-contact-id">
+
+        <!-- Category toggle -->
+        <div>
+          <label class="block text-xs font-bold text-steel uppercase tracking-wide mb-1.5">Category *</label>
+          <div class="grid grid-cols-2 gap-3">
+            <button type="button" id="cat-business-btn" class="flex items-center justify-center gap-2 px-4 py-3 rounded-xl border-2 font-bold text-sm focus:outline-none transition-all border-navy bg-navy text-white">
+              <i data-lucide="briefcase" class="w-4 h-4"></i>
+              <span>Business</span>
+            </button>
+            <button type="button" id="cat-personal-btn" class="flex items-center justify-center gap-2 px-4 py-3 rounded-xl border-2 font-semibold text-sm focus:outline-none transition-all border-softBlue2 bg-white text-steel hover:border-navy hover:text-navy">
+              <i data-lucide="user" class="w-4 h-4"></i>
+              <span>Personal</span>
+            </button>
+          </div>
+        </div>
 
         <div>
           <label class="block text-xs font-bold text-steel uppercase tracking-wide mb-1.5">Full Name *</label>
@@ -197,21 +216,6 @@ export function createContactsModule(onBack) {
               <span class="absolute inset-y-0 left-0 pl-3 flex items-center text-steel"><i data-lucide="briefcase" class="w-4 h-4"></i></span>
               <input type="text" id="form-role" placeholder="e.g. Underwriter" class="w-full pl-9 pr-4 py-2 border border-softBlue2 bg-lightGray text-navy rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-steel focus:border-transparent transition-all">
             </div>
-          </div>
-        </div>
-
-        <!-- Category toggle -->
-        <div>
-          <label class="block text-xs font-bold text-steel uppercase tracking-wide mb-1.5">Category *</label>
-          <div class="grid grid-cols-2 gap-3">
-            <button type="button" id="cat-business-btn" class="flex items-center justify-center gap-2 px-4 py-3 rounded-xl border-2 font-bold text-sm focus:outline-none transition-all border-navy bg-navy text-white">
-              <i data-lucide="briefcase" class="w-4 h-4"></i>
-              <span>Business</span>
-            </button>
-            <button type="button" id="cat-personal-btn" class="flex items-center justify-center gap-2 px-4 py-3 rounded-xl border-2 font-semibold text-sm focus:outline-none transition-all border-softBlue2 bg-white text-steel hover:border-navy hover:text-navy">
-              <i data-lucide="user" class="w-4 h-4"></i>
-              <span>Personal</span>
-            </button>
           </div>
         </div>
 
@@ -395,8 +399,6 @@ export function createContactsModule(onBack) {
           <button id="ct-import-select-all" class="px-2.5 py-1 rounded-md font-semibold text-steel hover:bg-softBlue1 transition focus:outline-none">Select all</button>
           <span class="text-softBlue2">|</span>
           <button id="ct-import-select-none" class="px-2.5 py-1 rounded-md font-semibold text-steel hover:bg-softBlue1 transition focus:outline-none">Select none</button>
-          <span class="text-softBlue2">|</span>
-          <button id="ct-import-skip-dupes" class="px-2.5 py-1 rounded-md font-semibold text-steel hover:bg-softBlue1 transition focus:outline-none">Skip duplicates</button>
         </div>
       </div>
 
@@ -419,6 +421,8 @@ export function createContactsModule(onBack) {
   const viewGridBtn       = container.querySelector('#ct-view-grid');
   const viewListBtn       = container.querySelector('#ct-view-list');
   const addBtn            = container.querySelector('#ct-add-btn');
+  const toolbarControls   = container.querySelector('#ct-toolbar-controls');
+  const pillBar           = container.querySelector('#ct-pill-bar');
   const exportBtn         = container.querySelector('#ct-export-btn');
   const importInput       = container.querySelector('#ct-import-input');
   const importCsvInput    = container.querySelector('#ct-import-csv-input');
@@ -429,12 +433,15 @@ export function createContactsModule(onBack) {
   const importSummary     = container.querySelector('#ct-import-summary');
   const importList        = container.querySelector('#ct-import-list');
   const importConfirmBtn  = container.querySelector('#ct-import-confirm');
-
   const filterPillsDiv    = container.querySelector('#ct-filter-pills');
   const contactsContainer = container.querySelector('#ct-contacts-container');
   const emptyState        = container.querySelector('#ct-empty-state');
   const emptyTitle        = container.querySelector('#ct-empty-title');
   const emptyCopy         = container.querySelector('#ct-empty-copy');
+  let filterBtn           = null;
+  let filterFlyout        = null;
+  let filterFlyoutMenu    = null;
+  let filterFlyoutOptions = null;
 
   const modalBackdrop     = container.querySelector('#ct-modal-backdrop');
   const modalInner        = modalBackdrop.querySelector('div');
@@ -482,11 +489,61 @@ export function createContactsModule(onBack) {
   // ─── DATA ─────────────────────────────────────────────────────────────────
   // Short codes (119, 156), starred/hash codes (*123), and other ≤6-digit lines are
   // utility / service numbers rather than real people.
+  function createEmptyAdvancedFilters() {
+    return {
+      roles: [],
+      tags: [],
+      activityStatuses: [],
+    };
+  }
+
+  function cloneAdvancedFilters(filters) {
+    return {
+      roles: [...(filters.roles || [])],
+      tags: [...(filters.tags || [])],
+      activityStatuses: [...(filters.activityStatuses || [])],
+    };
+  }
+
+  function countActiveAdvancedFilters(filters = advancedFilters) {
+    return ['roles', 'tags', 'activityStatuses']
+      .reduce((sum, key) => sum + (filters[key]?.length || 0), 0);
+  }
+
+  function getLatestTimelineTimestamp(contact) {
+    const entries = (contact.timeline || []).slice().sort((a, b) => new Date(b.timestamp) - new Date(a.timestamp));
+    return entries[0]?.timestamp || '';
+  }
+
+  function getDynamicFilterOptions() {
+    const roles = [...new Set(contacts.map(c => String(c.role || '').trim()).filter(Boolean))].sort((a, b) => a.localeCompare(b));
+    const tags = [...new Set(contacts.flatMap(c => Array.isArray(c.tags) ? c.tags : []).map(tag => String(tag || '').trim()).filter(Boolean))].sort((a, b) => a.localeCompare(b));
+    return { roles, tags };
+  }
+
   function isServiceNumber(phone) {
     const raw = String(phone || '');
     if (/[*#]/.test(raw)) return true;
     const digits = raw.replace(/\D/g, '');
     return digits.length > 0 && digits.length <= 6;
+  }
+
+  function matchesActivityStatus(contact, status) {
+    const hasTimeline = (contact.timeline || []).length > 0;
+    const lastActivityAt = getLatestTimelineTimestamp(contact);
+    const activityAgeDays = lastActivityAt ? (Date.now() - new Date(lastActivityAt).getTime()) / (1000 * 60 * 60 * 24) : Infinity;
+    if (status === 'hasActivity') return hasTimeline;
+    if (status === 'noActivity') return !hasTimeline;
+    if (status === 'recentlyActive') return hasTimeline && activityAgeDays <= 30;
+    if (status === 'noRecentActivity') return !hasTimeline || activityAgeDays > 30;
+    return true;
+  }
+
+  function passesAdvancedFilters(contact) {
+    if (advancedFilters.roles.length > 0 && !advancedFilters.roles.includes(String(contact.role || '').trim())) return false;
+    if (advancedFilters.tags.length > 0 && !advancedFilters.tags.some(tag => (contact.tags || []).includes(tag))) return false;
+    if (advancedFilters.activityStatuses.length > 0 && !advancedFilters.activityStatuses.some(status => matchesActivityStatus(contact, status))) return false;
+    return true;
   }
 
   function getFiltered() {
@@ -496,6 +553,7 @@ export function createContactsModule(onBack) {
     else if (activeFilter === 'business') list = list.filter(c => c.category === 'business');
 
     if (hideServiceNumbers) list = list.filter(c => !isServiceNumber(c.phone));
+    list = list.filter(passesAdvancedFilters);
 
     if (searchQuery.trim()) {
       const q = searchQuery.toLowerCase();
@@ -518,6 +576,8 @@ export function createContactsModule(onBack) {
   // ─── RENDER ───────────────────────────────────────────────────────────────
   function renderAll() {
     renderFilterPills();
+    renderFilterButtonState();
+    if (isFilterFlyoutOpen) renderFilterFlyout();
     renderContentModeToggle();
     renderContacts();
   }
@@ -567,6 +627,201 @@ export function createContactsModule(onBack) {
     if (window.lucide) window.lucide.createIcons();
   }
 
+  function renderFilterButtonState() {
+    if (!filterBtn) return;
+    const activeCount = countActiveAdvancedFilters();
+    filterBtn.innerHTML = `<i data-lucide="filter" class="w-4 h-4"></i><span>Filters</span>${activeCount > 0 ? `<span class="inline-flex items-center justify-center min-w-5 h-5 px-1.5 rounded-full bg-navy text-white text-[10px] font-bold">${activeCount}</span>` : ''}<i data-lucide="chevron-down" class="w-4 h-4 text-steel"></i>`;
+    filterBtn.classList.toggle('bg-softBlue1', isFilterFlyoutOpen);
+    filterBtn.classList.toggle('border-navy', isFilterFlyoutOpen);
+    if (window.lucide) window.lucide.createIcons();
+  }
+
+  function renderFilterFlyout() {
+    if (!filterFlyoutMenu || !filterFlyoutOptions) return;
+    const { roles, tags } = getDynamicFilterOptions();
+    const groups = [
+      {
+        key: 'roles',
+        label: 'Role',
+        description: 'Filter by the role saved on the profile.',
+        emptyLabel: 'No roles available yet.',
+        items: roles,
+      },
+      {
+        key: 'tags',
+        label: 'Tags',
+        description: 'Match any saved contact tags.',
+        emptyLabel: 'No tags available yet.',
+        items: tags,
+      },
+      {
+        key: 'activityStatuses',
+        label: 'Activity status',
+        description: 'Use memo activity to find recent or untouched contacts.',
+        emptyLabel: '',
+        items: [
+          { value: 'hasActivity', label: 'Has timed activity memo' },
+          { value: 'noActivity', label: 'No timed activity memo' },
+          { value: 'recentlyActive', label: 'Recently active' },
+          { value: 'noRecentActivity', label: 'No recent activity' },
+        ],
+      },
+    ];
+    const activeGroup = groups.find((group) => group.key === activeFilterFlyoutGroup) || groups[0];
+    activeFilterFlyoutGroup = activeGroup.key;
+
+    filterFlyoutMenu.innerHTML = groups.map((group) => {
+      const isActive = group.key === activeGroup.key;
+      const selectedCount = advancedFilters[group.key]?.length || 0;
+      return `
+        <button
+          type="button"
+          data-filter-menu-trigger="${group.key}"
+          class="flex w-full items-center justify-between gap-3 rounded-xl px-3 py-2.5 text-left text-sm font-semibold transition ${isActive ? 'bg-softBlue1 text-navy' : 'text-steel hover:bg-softBlue1/70 hover:text-navy'}"
+        >
+          <span>${group.label}</span>
+          <span class="flex items-center gap-2">
+            ${selectedCount > 0 ? `<span class="inline-flex items-center justify-center min-w-5 h-5 px-1.5 rounded-full bg-navy text-white text-[10px] font-bold">${selectedCount}</span>` : ''}
+            <i data-lucide="chevron-right" class="w-4 h-4 ${isActive ? 'text-navy' : 'text-steel'}"></i>
+          </span>
+        </button>`;
+    }).join('');
+
+    const selectedValues = new Set(advancedFilters[activeGroup.key] || []);
+    const optionItems = activeGroup.items.map((item) => typeof item === 'string' ? { value: item, label: item } : item);
+    filterFlyoutOptions.innerHTML = `
+      <div class="mb-3 flex items-start justify-between gap-3">
+        <div>
+          <h4 class="text-sm font-bold text-navy">${activeGroup.label}</h4>
+          <p class="mt-1 text-xs text-steel">${activeGroup.description}</p>
+        </div>
+        ${countActiveAdvancedFilters() > 0 ? '<button type="button" data-filter-clear class="text-xs font-bold text-steel hover:text-navy transition">Clear all</button>' : ''}
+      </div>
+      ${optionItems.length > 0 ? `
+        <div class="max-h-72 space-y-2 overflow-y-auto pr-1 custom-scrollbar">
+          ${optionItems.map((item) => `
+            <label class="flex items-center gap-2 rounded-xl border border-softBlue2 bg-lightGray/60 px-3 py-2 text-sm text-navy">
+              <input type="checkbox" data-filter-group="${activeGroup.key}" value="${escapeHTML(item.value)}" ${selectedValues.has(item.value) ? 'checked' : ''} class="h-4 w-4 cursor-pointer accent-navy">
+              <span>${escapeHTML(item.label)}</span>
+            </label>
+          `).join('')}
+        </div>` : `<p class="text-xs italic text-steel/70">${activeGroup.emptyLabel}</p>`}
+    `;
+    if (window.lucide) window.lucide.createIcons();
+  }
+
+  function openFilterFlyout() {
+    isFilterFlyoutOpen = true;
+    filterFlyout?.classList.remove('hidden');
+    renderFilterButtonState();
+    renderFilterFlyout();
+  }
+
+  function closeFilterFlyout() {
+    isFilterFlyoutOpen = false;
+    filterFlyout?.classList.add('hidden');
+    renderFilterButtonState();
+  }
+
+  function toggleFilterFlyout() {
+    if (isFilterFlyoutOpen) closeFilterFlyout();
+    else openFilterFlyout();
+  }
+
+  function clearAdvancedFilters() {
+    advancedFilters = createEmptyAdvancedFilters();
+    renderFilterButtonState();
+    renderFilterFlyout();
+    renderContacts();
+  }
+
+  function restructureTopToolbar() {
+    if (!toolbarControls || !pillBar || toolbarControls.dataset.restructured === 'true') return;
+
+    const main = toolbarControls.parentElement;
+    const originalLeft = toolbarControls.children[0];
+    const originalRight = toolbarControls.children[1];
+    const modeToggle = originalLeft?.children[0];
+    const searchWrap = originalLeft?.children[1];
+    const sortWrap = originalRight?.children[0];
+    const divider = originalRight?.children[1];
+    const viewToggle = originalRight?.children[2];
+
+    const modeShell = document.createElement('div');
+    modeShell.className = 'flex flex-shrink-0';
+    modeShell.innerHTML = '<div class="inline-flex items-center rounded-2xl border border-softBlue2 bg-white p-1.5 shadow-sm"></div>';
+    modeShell.firstElementChild.appendChild(modeToggle);
+    main.insertBefore(modeShell, toolbarControls);
+
+    toolbarControls.className = 'bg-white rounded-2xl border border-softBlue2 p-4 shadow-sm flex flex-col xl:flex-row gap-3 xl:items-center xl:justify-between flex-shrink-0';
+
+    const leftControls = document.createElement('div');
+    leftControls.className = 'flex w-full flex-col lg:flex-row gap-3 xl:flex-1';
+    const rightControls = document.createElement('div');
+    rightControls.className = 'flex w-full flex-wrap items-center gap-3 xl:w-auto xl:flex-nowrap';
+
+    if (viewToggle) {
+      viewToggle.className = 'flex bg-lightGray rounded-xl p-1 border border-softBlue1 flex-shrink-0 self-start';
+      leftControls.appendChild(viewToggle);
+    }
+
+    if (searchWrap) {
+      searchWrap.className = 'relative w-full xl:max-w-xl xl:flex-1';
+      searchInput.className = 'w-full pl-10 pr-4 py-3 text-sm border-2 border-softBlue1 rounded-xl focus:outline-none focus:ring-2 focus:ring-steel focus:border-transparent bg-lightGray text-navy placeholder-steel/60 transition-all';
+      searchInput.placeholder = 'Search by name, phone, email, company, or tag...';
+      leftControls.appendChild(searchWrap);
+    }
+
+    const filterWrap = document.createElement('div');
+    filterWrap.className = 'relative flex-shrink-0';
+
+    filterBtn = document.createElement('button');
+    filterBtn.id = 'ct-filter-btn';
+    filterBtn.type = 'button';
+    filterBtn.className = 'inline-flex items-center gap-2 rounded-xl border border-softBlue2 bg-white px-4 py-3 text-sm font-semibold text-navy transition hover:bg-softBlue1 focus:outline-none';
+    filterBtn.innerHTML = '<i data-lucide="filter" class="w-4 h-4"></i><span>Filters</span><i data-lucide="chevron-down" class="w-4 h-4 text-steel"></i>';
+
+    filterFlyout = document.createElement('div');
+    filterFlyout.id = 'ct-filter-flyout';
+    filterFlyout.className = 'hidden absolute right-0 top-full z-40 mt-2 w-[36rem] max-w-[calc(100vw-3rem)] overflow-hidden rounded-2xl border border-softBlue2 bg-white shadow-2xl';
+    filterFlyout.innerHTML = `
+      <div class="grid grid-cols-[220px_minmax(0,1fr)]">
+        <div id="ct-filter-flyout-menu" class="border-r border-softBlue1 bg-lightGray/60 p-3"></div>
+        <div id="ct-filter-flyout-options" class="p-4"></div>
+      </div>
+    `;
+
+    filterWrap.append(filterBtn, filterFlyout);
+    rightControls.appendChild(filterWrap);
+    filterFlyoutMenu = filterFlyout.querySelector('#ct-filter-flyout-menu');
+    filterFlyoutOptions = filterFlyout.querySelector('#ct-filter-flyout-options');
+
+    if (sortWrap) {
+      sortWrap.className = 'flex items-center gap-2 rounded-xl border border-softBlue2 bg-white px-4 py-3 text-sm';
+      const sortLabel = sortWrap.querySelector('span');
+      if (sortLabel) {
+        sortLabel.className = 'text-steel font-bold whitespace-nowrap';
+      }
+      sortSelect.className = 'bg-transparent text-navy focus:outline-none text-sm font-semibold cursor-pointer';
+      rightControls.appendChild(sortWrap);
+    }
+
+    if (divider) divider.remove();
+
+    exportBtn.className = 'inline-flex items-center gap-2 rounded-xl border border-softBlue2 bg-white px-4 py-3 text-sm font-semibold text-navy transition hover:bg-softBlue1 focus:outline-none flex-shrink-0';
+    importBtn.className = 'inline-flex items-center gap-2 rounded-xl border border-softBlue2 bg-white px-4 py-3 text-sm font-semibold text-navy transition hover:bg-softBlue1 focus:outline-none';
+    rightControls.append(exportBtn, importBtn.parentElement);
+
+    toolbarControls.replaceChildren(leftControls, rightControls);
+
+    pillBar.className = 'bg-white rounded-2xl border border-softBlue2 p-3 shadow-sm flex flex-col lg:flex-row lg:items-center lg:justify-between gap-3 flex-shrink-0';
+    addBtn.className = 'inline-flex items-center justify-center gap-2 rounded-full bg-navy px-5 py-2.5 text-sm font-bold text-white border border-navy shadow-sm transition-all hover:bg-steel hover:border-steel focus:outline-none flex-shrink-0 self-start lg:self-auto';
+
+    toolbarControls.dataset.restructured = 'true';
+    renderFilterButtonState();
+    if (window.lucide) window.lucide.createIcons();
+  }
+
   function getMemoContacts() {
     return getFiltered()
       .filter(contact => (contact.timeline || []).length > 0)
@@ -582,7 +837,54 @@ export function createContactsModule(onBack) {
       .sort((a, b) => new Date(b.lastActivityAt) - new Date(a.lastActivityAt));
   }
 
+  function pruneSelectedContacts() {
+    const validIds = new Set(contacts.map(contact => contact.id));
+    selectedContactIds.forEach((id) => {
+      if (!validIds.has(id)) selectedContactIds.delete(id);
+    });
+  }
+
+  function setSelectedContacts(ids) {
+    selectedContactIds = new Set(ids);
+  }
+
+  function applyBulkAction(action) {
+    const selectedIds = Array.from(selectedContactIds);
+    if (selectedIds.length === 0) {
+      showToast('Select at least one contact first.', 'error');
+      return;
+    }
+    if (action === 'delete') {
+      const confirmed = window.confirm(`Delete ${selectedIds.length} selected contact(s)?`);
+      if (!confirmed) return;
+      contacts = contacts.filter(contact => !selectedContactIds.has(contact.id));
+      saveContacts(contacts);
+      setSelectedContacts([]);
+      showToast(`${selectedIds.length} contact(s) deleted.`, 'success');
+      renderAll();
+      return;
+    }
+    if (action === 'personal' || action === 'business') {
+      contacts.forEach((contact) => {
+        if (!selectedContactIds.has(contact.id)) return;
+        contact.category = action;
+        if (action === 'personal') {
+          contact.company = '';
+          contact.role = '';
+        }
+      });
+      saveContacts(contacts);
+      showToast(`${selectedIds.length} contact(s) updated to ${action}.`, 'success');
+      renderAll();
+    }
+  }
+
+  function hasActiveContactFilters() {
+    return activeFilter !== 'all' || hideServiceNumbers || countActiveAdvancedFilters() > 0;
+  }
+
   function renderContacts() {
+    pruneSelectedContacts();
     const filtered = getFiltered();
     const memoContacts = getMemoContacts();
     const isDirectoryMode = contentMode === 'directory';
@@ -590,10 +892,18 @@ export function createContactsModule(onBack) {
 
     if (!hasResults) {
       contactsContainer.innerHTML = '';
-      emptyTitle.textContent = isDirectoryMode ? 'No Contact Entries Match' : 'No Activity Memos Match';
+      const filtersActive = isDirectoryMode && hasActiveContactFilters();
+      emptyTitle.textContent = isDirectoryMode
+        ? (filtersActive ? 'No contacts match these filters.' : 'No Contact Entries Match')
+        : 'No Activity Memos Match';
       emptyCopy.textContent = isDirectoryMode
-        ? 'Adjust your filter options, modify the search query, or add a new contact profile.'
+        ? (filtersActive
+          ? 'Try clearing filters or adjusting your search.'
+          : 'Adjust your filter options, modify the search query, or add a new contact profile.')
         : 'Try a different filter or search query, or add a new activity memo from a contact profile.';
+      const emptyActionBtn = container.querySelector('#ct-empty-add-btn');
+      emptyActionBtn.textContent = filtersActive ? 'Clear Filters' : 'Create Profile Card';
+      emptyActionBtn.dataset.mode = filtersActive ? 'clear-filters' : 'add-contact';
       emptyState.classList.remove('hidden');
       emptyState.classList.add('flex');
       if (window.lucide) window.lucide.createIcons();
@@ -704,21 +1014,49 @@ export function createContactsModule(onBack) {
       contactsContainer.innerHTML = filtered.map(renderContactCard).join('');
     } else {
       contactsContainer.className = 'flex flex-col space-y-2.5 bg-white border border-softBlue2 rounded-2xl p-4 shadow-sm';
+      const visibleIds = filtered.map(contact => contact.id);
+      const visibleSelectedCount = visibleIds.filter(id => selectedContactIds.has(id)).length;
+      const allVisibleSelected = visibleIds.length > 0 && visibleSelectedCount === visibleIds.length;
+      const hasAnySelection = selectedContactIds.size > 0;
+      const bulkBar = `
+        <div class="sticky top-0 z-10 -mx-4 px-4 pt-1 pb-3 bg-white border-b border-softBlue1 flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
+          <div class="flex items-center gap-3">
+            <label class="inline-flex items-center gap-2 text-xs font-bold text-navy">
+              <input type="checkbox" data-action="toggle-select-all-visible" ${allVisibleSelected ? 'checked' : ''} class="w-4 h-4 accent-navy cursor-pointer">
+              <span>Select visible (${visibleSelectedCount}/${visibleIds.length})</span>
+            </label>
+          </div>
+          <div class="flex items-center gap-2 ${hasAnySelection ? '' : 'hidden'}">
+            <select id="ct-bulk-action-select" class="min-w-[190px] bg-lightGray border border-softBlue2 text-navy py-2 px-3 rounded-lg focus:outline-none focus:ring-2 focus:ring-steel text-xs font-semibold cursor-pointer">
+              <option value="">Bulk actions</option>
+              <option value="delete">Delete selected</option>
+              <option value="personal">Mark as Personal</option>
+              <option value="business">Mark as Business</option>
+            </select>
+            <button type="button" id="ct-bulk-action-apply" class="px-4 py-2 text-xs font-bold text-white bg-navy hover:bg-steel rounded-lg border border-navy transition-colors focus:outline-none">
+              Apply
+            </button>
+          </div>
+        </div>`;
       const header = `
         <div class="hidden md:grid grid-cols-12 gap-4 px-4 py-2 text-xs font-bold text-steel uppercase tracking-wider border-b border-softBlue1">
-          <div class="col-span-4">Contact Profile</div>
+          <div class="col-span-1 text-center">Select</div>
+          <div class="col-span-3">Contact Profile</div>
           <div class="col-span-3">Contact Channels</div>
-          <div class="col-span-3">Tags</div>
-          <div class="col-span-2 text-right">Actions</div>
+          <div class="col-span-2">Tags</div>
+          <div class="col-span-3 text-right">Actions</div>
         </div>`;
-      contactsContainer.innerHTML = header + filtered.map((c, i) => renderContactRow(c, i)).join('');
+      contactsContainer.innerHTML = bulkBar + header + filtered.map((c, i) => renderContactRow(c, i, {
+        showCheckboxes: true,
+        isSelected: selectedContactIds.has(c.id),
+      })).join('');
     }
     if (window.lucide) window.lucide.createIcons();
   }
 
   function renderViewToggle() {
-    const active   = 'p-1.5 rounded-md bg-white text-navy shadow-sm transition-all focus:outline-none';
-    const inactive = 'p-1.5 rounded-md text-steel hover:text-navy transition-all focus:outline-none';
+    const active   = 'p-2 rounded-lg bg-white text-navy shadow-sm transition-all focus:outline-none';
+    const inactive = 'p-2 rounded-lg text-steel hover:text-navy transition-all focus:outline-none';
     viewGridBtn.className = viewMode === 'grid' ? active : inactive;
     viewListBtn.className = viewMode === 'list' ? active : inactive;
     const hidden = contentMode === 'memos';
@@ -728,8 +1066,8 @@ export function createContactsModule(onBack) {
   function renderContentModeToggle() {
     const active = 'bg-white text-navy shadow-sm';
     const inactive = 'text-steel hover:text-navy';
-    modeDirectoryBtn.className = `inline-flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-xs font-bold transition-all focus:outline-none ${contentMode === 'directory' ? active : inactive}`;
-    modeMemosBtn.className = `inline-flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-xs font-bold transition-all focus:outline-none ${contentMode === 'memos' ? active : inactive}`;
+    modeDirectoryBtn.className = `inline-flex items-center gap-1.5 rounded-xl px-4 py-2 text-xs font-bold transition-all focus:outline-none ${contentMode === 'directory' ? active : inactive}`;
+    modeMemosBtn.className = `inline-flex items-center gap-1.5 rounded-xl px-4 py-2 text-xs font-bold transition-all focus:outline-none ${contentMode === 'memos' ? active : inactive}`;
     renderViewToggle();
   }
 
@@ -1093,6 +1431,7 @@ export function createContactsModule(onBack) {
   // ─── EVENT WIRING ─────────────────────────────────────────────────────────
 
   // Filter pills (event delegation — stable parent, innerHTML replacements don't break this)
+  restructureTopToolbar();
   filterPillsDiv.addEventListener('click', (e) => {
     const toggle = e.target.closest('[data-toggle="service"]');
     if (toggle) { hideServiceNumbers = !hideServiceNumbers; renderFilterPills(); renderContacts(); return; }
@@ -1101,6 +1440,10 @@ export function createContactsModule(onBack) {
   });
 
   searchInput.addEventListener('input', (e) => { searchQuery = e.target.value; renderContacts(); });
+  filterBtn?.addEventListener('click', (e) => {
+    e.stopPropagation();
+    toggleFilterFlyout();
+  });
   modeDirectoryBtn.addEventListener('click', () => { contentMode = 'directory'; renderContentModeToggle(); renderContacts(); });
   modeMemosBtn.addEventListener('click', () => { contentMode = 'memos'; renderContentModeToggle(); renderContacts(); });
   sortSelect.addEventListener('change', (e) => { sortMode = e.target.value; renderContacts(); });
@@ -1108,9 +1451,64 @@ export function createContactsModule(onBack) {
   viewListBtn.addEventListener('click', () => { viewMode = 'list'; renderContacts(); renderViewToggle(); });
 
   addBtn.addEventListener('click', openAddModal);
-  container.querySelector('#ct-empty-add-btn').addEventListener('click', openAddModal);
+  container.querySelector('#ct-empty-add-btn').addEventListener('click', () => {
+    if (container.querySelector('#ct-empty-add-btn').dataset.mode === 'clear-filters') {
+      activeFilter = 'all';
+      hideServiceNumbers = false;
+      advancedFilters = createEmptyAdvancedFilters();
+      renderFilterPills();
+      renderFilterButtonState();
+      renderContacts();
+      return;
+    }
+    openAddModal();
+  });
 
   exportBtn.addEventListener('click', () => { exportToJSON(contacts); showToast('Database snapshot exported!', 'success'); });
+
+  filterFlyoutMenu?.addEventListener('mouseover', (e) => {
+    const trigger = e.target.closest('[data-filter-menu-trigger]');
+    if (!trigger) return;
+    activeFilterFlyoutGroup = trigger.getAttribute('data-filter-menu-trigger');
+    renderFilterFlyout();
+  });
+
+  filterFlyoutMenu?.addEventListener('click', (e) => {
+    const trigger = e.target.closest('[data-filter-menu-trigger]');
+    if (!trigger) return;
+    activeFilterFlyoutGroup = trigger.getAttribute('data-filter-menu-trigger');
+    renderFilterFlyout();
+  });
+
+  filterFlyoutOptions?.addEventListener('change', (e) => {
+    const checkbox = e.target.closest('[data-filter-group]');
+    if (!checkbox) return;
+    const group = checkbox.getAttribute('data-filter-group');
+    const value = checkbox.value;
+    const nextValues = new Set(advancedFilters[group] || []);
+    if (checkbox.checked) nextValues.add(value);
+    else nextValues.delete(value);
+    advancedFilters[group] = Array.from(nextValues);
+    renderFilterButtonState();
+    renderFilterFlyout();
+    renderContacts();
+  });
+
+  filterFlyoutOptions?.addEventListener('click', (e) => {
+    const clearBtn = e.target.closest('[data-filter-clear]');
+    if (!clearBtn) return;
+    clearAdvancedFilters();
+  });
+
+  document.addEventListener('click', (e) => {
+    if (!isFilterFlyoutOpen) return;
+    if (e.target.closest('#ct-filter-btn') || e.target.closest('#ct-filter-flyout')) return;
+    closeFilterFlyout();
+  });
+
+  document.addEventListener('keydown', (e) => {
+    if (e.key === 'Escape' && isFilterFlyoutOpen) closeFilterFlyout();
+  });
 
   // Import dropdown: choose JSON backup or direct CSV import
   importBtn.addEventListener('click', (e) => {
@@ -1164,6 +1562,15 @@ export function createContactsModule(onBack) {
     return digits.length > 10 ? digits.slice(-10) : digits;
   }
 
+  function getImportPhoneStatus(phone) {
+    const digits = String(phone || '').replace(/\D/g, '');
+    if (!digits) return 'missing';
+    if (digits.length <= 6) return 'utility';
+    if (digits.length === 10) return 'valid';
+    if (digits.length >= 11 && digits.length <= 13) return 'valid';
+    return 'invalid';
+  }
+
   // Flag each imported contact as a duplicate if its phone or email matches an
   // existing contact (or an earlier row in the same file). Duplicates start unchecked.
   function buildImportCandidates(imported) {
@@ -1180,8 +1587,31 @@ export function createContactsModule(onBack) {
       if (emailKey) seenEmails.add(emailKey);
       if (pKey) seenPhones.add(pKey);
       const isDuplicate = Boolean(dupReason);
-      return { contact: c, isDuplicate, dupReason, selected: !isDuplicate };
+      const hasPlaceholderName = isPlaceholderImportName(c.name);
+      const isSpamLike = isSpamImportName(c.name);
+      const phoneStatus = getImportPhoneStatus(c.phone);
+      const skipReasons = [];
+      if (isDuplicate) skipReasons.push(`Duplicate · ${dupReason}`);
+      if (hasPlaceholderName) skipReasons.push('Unnamed');
+      if (isSpamLike) skipReasons.push('Spam');
+      if (phoneStatus === 'missing') skipReasons.push('No phone');
+      if (phoneStatus === 'utility') skipReasons.push('Utility number');
+      if (phoneStatus === 'invalid') skipReasons.push('Invalid phone');
+      return { contact: c, isDuplicate, dupReason, hasPlaceholderName, isSpamLike, phoneStatus, skipReasons, selected: skipReasons.length === 0 };
     });
+  }
+
+  function normalizeImportName(name) {
+    return String(name || '').trim().toLowerCase().replace(/\s+/g, ' ');
+  }
+
+  function isPlaceholderImportName(name) {
+    const normalized = normalizeImportName(name);
+    return !normalized || normalized === 'unnamed contact' || normalized === 'unnamed' || normalized === 'unknown' || normalized === 'no name';
+  }
+
+  function isSpamImportName(name) {
+    return normalizeImportName(name) === 'spam';
   }
 
   function openImportPreview(imported) {
@@ -1192,21 +1622,35 @@ export function createContactsModule(onBack) {
 
   function renderImportList() {
     const dupCount = importCandidates.filter(c => c.isDuplicate).length;
-    importSummary.textContent = `${importCandidates.length} found · ${dupCount} possible duplicate${dupCount === 1 ? '' : 's'}`;
+    const unnamedCount = importCandidates.filter(c => c.hasPlaceholderName).length;
+    const spamCount = importCandidates.filter(c => c.isSpamLike).length;
+    const utilityCount = importCandidates.filter(c => c.phoneStatus === 'utility').length;
+    const noPhoneCount = importCandidates.filter(c => c.phoneStatus === 'missing').length;
+    const invalidPhoneCount = importCandidates.filter(c => c.phoneStatus === 'invalid').length;
+    importSummary.textContent = `${importCandidates.length} found · ${dupCount} possible duplicate${dupCount === 1 ? '' : 's'} · ${unnamedCount} unnamed contact${unnamedCount === 1 ? '' : 's'} · ${spamCount} possible spam · ${utilityCount} utility number${utilityCount === 1 ? '' : 's'} · ${noPhoneCount} with no phone · ${invalidPhoneCount} invalid phone${invalidPhoneCount === 1 ? '' : 's'}`;
     importList.innerHTML = importCandidates.map((cand, i) => {
       const c = cand.contact;
       const { bg, text } = getAvatarPalette(c.name);
-      const dupBadge = cand.isDuplicate
-        ? `<span class="px-2 py-0.5 text-[9px] font-bold uppercase tracking-wide rounded-md bg-amber/15 text-amber border border-amber/30 whitespace-nowrap flex-shrink-0">Duplicate · ${cand.dupReason}</span>`
+      const suggestedSkipBadge = cand.skipReasons.length
+        ? '<span class="px-2 py-0.5 text-[9px] font-bold uppercase tracking-wide rounded-md bg-lightGray text-steel border border-softBlue2 whitespace-nowrap flex-shrink-0">Suggested skip</span>'
         : '';
+      const reasonBadges = cand.skipReasons.map((reason) => {
+        if (reason.startsWith('Duplicate')) return `<span class="px-2 py-0.5 text-[9px] font-bold uppercase tracking-wide rounded-md bg-amber/15 text-amber border border-amber/30 whitespace-nowrap flex-shrink-0">${reason}</span>`;
+        if (reason === 'Spam') return '<span class="px-2 py-0.5 text-[9px] font-bold uppercase tracking-wide rounded-md bg-rose-100 text-rose-700 border border-rose-200 whitespace-nowrap flex-shrink-0">Spam</span>';
+        if (reason === 'Utility number') return '<span class="px-2 py-0.5 text-[9px] font-bold uppercase tracking-wide rounded-md bg-rose-100 text-rose-700 border border-rose-200 whitespace-nowrap flex-shrink-0">Utility number</span>';
+        if (reason === 'No phone') return '<span class="px-2 py-0.5 text-[9px] font-bold uppercase tracking-wide rounded-md bg-rose-100 text-rose-700 border border-rose-200 whitespace-nowrap flex-shrink-0">No phone</span>';
+        if (reason === 'Invalid phone') return '<span class="px-2 py-0.5 text-[9px] font-bold uppercase tracking-wide rounded-md bg-rose-100 text-rose-700 border border-rose-200 whitespace-nowrap flex-shrink-0">Invalid phone</span>';
+        return '<span class="px-2 py-0.5 text-[9px] font-bold uppercase tracking-wide rounded-md bg-rose-100 text-rose-700 border border-rose-200 whitespace-nowrap flex-shrink-0">Unnamed</span>';
+      }).join('');
       return `
         <label class="flex items-center gap-3 rounded-xl border ${cand.selected ? 'border-softBlue2 bg-white' : 'border-softBlue1 bg-lightGray/60'} px-3 py-2.5 cursor-pointer transition-colors hover:border-steel">
           <input type="checkbox" data-import-idx="${i}" ${cand.selected ? 'checked' : ''} class="w-4 h-4 accent-navy cursor-pointer flex-shrink-0">
           <span class="w-8 h-8 rounded-lg flex-shrink-0 flex items-center justify-center font-bold text-[11px] ${bg} ${text} select-none">${getInitials(c.name)}</span>
           <div class="min-w-0 flex-1">
             <div class="flex items-center gap-2">
-              <p class="text-sm font-bold text-navy truncate">${escapeHTML(c.name)}</p>
-              ${dupBadge}
+              <p class="text-sm font-bold text-navy truncate">${escapeHTML(c.name || 'Unnamed contact')}</p>
+              ${suggestedSkipBadge}
+              ${reasonBadges}
             </div>
             <p class="text-xs text-steel truncate">${escapeHTML(c.phone || 'No phone')}${c.email ? ' · ' + escapeHTML(c.email) : ''}</p>
           </div>
@@ -1248,9 +1692,14 @@ export function createContactsModule(onBack) {
     }
     updateImportFooter();
   });
-  container.querySelector('#ct-import-select-all').addEventListener('click', () => { importCandidates.forEach(c => { c.selected = true; }); renderImportList(); });
-  container.querySelector('#ct-import-select-none').addEventListener('click', () => { importCandidates.forEach(c => { c.selected = false; }); renderImportList(); });
-  container.querySelector('#ct-import-skip-dupes').addEventListener('click', () => { importCandidates.forEach(c => { c.selected = !c.isDuplicate; }); renderImportList(); });
+  container.querySelector('#ct-import-select-all').addEventListener('click', () => {
+    importCandidates.forEach(c => { c.selected = true; });
+    renderImportList();
+  });
+  container.querySelector('#ct-import-select-none').addEventListener('click', () => {
+    importCandidates.forEach(c => { c.selected = false; });
+    renderImportList();
+  });
   container.querySelector('#ct-import-close').addEventListener('click', () => closeModal(importBackdrop, importInner));
   container.querySelector('#ct-import-cancel').addEventListener('click', () => closeModal(importBackdrop, importInner));
   importBackdrop.addEventListener('click', (e) => { if (e.target === importBackdrop) closeModal(importBackdrop, importInner); });
@@ -1295,6 +1744,25 @@ export function createContactsModule(onBack) {
       e.stopPropagation();
       const action = actionBtn.getAttribute('data-action');
       const id     = actionBtn.getAttribute('data-id');
+      if (action === 'toggle-select-contact') {
+        if (selectedContactIds.has(id)) selectedContactIds.delete(id);
+        else selectedContactIds.add(id);
+        renderContacts();
+        return;
+      }
+      if (action === 'toggle-select-all-visible') {
+        const visibleContacts = getFiltered();
+        const visibleIds = visibleContacts.map(contact => contact.id);
+        const allVisibleSelected = visibleIds.length > 0 && visibleIds.every(contactId => selectedContactIds.has(contactId));
+        if (allVisibleSelected) {
+          visibleIds.forEach(contactId => selectedContactIds.delete(contactId));
+        } else {
+          visibleIds.forEach(contactId => selectedContactIds.add(contactId));
+        }
+        renderContacts();
+        return;
+      }
+      if (action === 'view-profile') { openDetailModal(id); return; }
       if (action === 'call' || action === 'email') { return; }
       if (action === 'select-memo-contact') {
         selectedMemoContactId = id;
@@ -1308,6 +1776,18 @@ export function createContactsModule(onBack) {
     }
     const card = e.target.closest('[data-action="open-detail"]');
     if (card) openDetailModal(card.getAttribute('data-id'));
+  });
+  contactsContainer.addEventListener('click', (e) => {
+    const bulkApplyBtn = e.target.closest('#ct-bulk-action-apply');
+    if (!bulkApplyBtn) return;
+    const actionSelect = contactsContainer.querySelector('#ct-bulk-action-select');
+    const action = actionSelect?.value;
+    if (!action) {
+      showToast('Choose a bulk action first.', 'error');
+      return;
+    }
+    applyBulkAction(action);
+    if (actionSelect) actionSelect.value = '';
   });
 
   // Detail modal — progressive compact header on scroll

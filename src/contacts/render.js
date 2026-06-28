@@ -102,16 +102,26 @@ export function renderContactCard(contact) {
   </div>`;
 }
 
-export function renderContactRow(contact, index) {
+export function renderContactRow(contact, index, options = {}) {
   const { bg, text } = getAvatarPalette(contact.name);
   const initials = getInitials(contact.name);
   const logCount = (contact.timeline || []).length;
   const starClass = contact.favorite ? 'text-gold fill-gold' : '';
   const altClass = index % 2 === 1 ? 'bg-lightGray/85' : 'bg-white';
+  const isSelected = Boolean(options.isSelected);
+  const checkboxCell = options.showCheckboxes
+    ? `<div class="col-span-1 flex items-center justify-center">
+        <input type="checkbox" data-action="toggle-select-contact" data-id="${contact.id}" ${isSelected ? 'checked' : ''} class="w-4 h-4 accent-navy cursor-pointer">
+      </div>`
+    : '';
+  const contactColSpan = options.showCheckboxes ? 'col-span-3' : 'col-span-4';
+  const tagColSpan = 'col-span-2';
+  const actionColSpan = options.showCheckboxes ? 'col-span-3' : 'col-span-3';
 
   return `
-  <div class="grid grid-cols-12 gap-4 items-center px-4 py-3 rounded-xl transition-all border border-transparent hover:border-steel hover:bg-softBlue1 cursor-pointer ${altClass}" data-action="open-detail" data-id="${contact.id}">
-    <div class="col-span-4 flex items-center space-x-3">
+  <div class="grid grid-cols-12 gap-4 items-center px-4 py-3 rounded-xl transition-all border border-transparent hover:border-steel hover:bg-softBlue1 ${altClass}">
+    ${checkboxCell}
+    <div class="${contactColSpan} flex items-center space-x-3">
       <div class="w-9 h-9 rounded-lg flex-shrink-0 flex items-center justify-center font-bold text-xs ${bg} ${text} select-none">
         ${initials}
       </div>
@@ -129,10 +139,13 @@ export function renderContactRow(contact, index) {
       <p class="flex items-center gap-1.5 font-medium"><i data-lucide="phone" class="w-3.5 h-3.5 text-steel flex-shrink-0"></i>${escapeHTML(contact.phone)}</p>
       <p class="flex items-center gap-1.5 ${contact.email ? '' : 'text-steel/55 italic'}"><i data-lucide="mail" class="w-3.5 h-3.5 text-steel flex-shrink-0"></i>${escapeHTML(contact.email || 'No email specified')}</p>
     </div>
-    <div class="col-span-3 flex flex-wrap gap-1 items-center">
+    <div class="${tagColSpan} flex flex-wrap gap-1 items-center">
       ${renderTagChips(contact.tags, 2)}
     </div>
-    <div class="col-span-2 flex items-center justify-end space-x-1.5">
+    <div class="${actionColSpan} flex items-center justify-end gap-1.5">
+      <button data-action="view-profile" data-id="${contact.id}" class="px-3 py-1.5 rounded-lg text-xs font-bold text-navy bg-white/80 border border-softBlue2 hover:border-steel hover:bg-white transition-all focus:outline-none" title="Open profile">
+        Open profile
+      </button>
       <button data-action="toggle-fav" data-id="${contact.id}" class="p-1.5 rounded-lg text-steel hover:text-gold hover:bg-white/80 transition-all focus:outline-none" title="Toggle Favorite">
         <i data-lucide="star" class="w-4 h-4 ${starClass}"></i>
       </button>
