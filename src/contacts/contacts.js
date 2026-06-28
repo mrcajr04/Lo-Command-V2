@@ -985,7 +985,7 @@ export function createContactsModule(onBack) {
 
       contactsContainer.className = 'grid grid-cols-1 xl:grid-cols-[300px_minmax(0,1fr)] gap-5 items-start';
       contactsContainer.innerHTML = `
-        <aside class="bg-white border border-softBlue2 rounded-2xl shadow-sm overflow-hidden">
+        <aside class="bg-white border border-softBlue2 rounded-2xl shadow-sm overflow-hidden sticky top-4">
           <div class="px-4 py-3 border-b border-softBlue1 bg-lightGray/60 flex items-center justify-between">
             <div>
               <p class="text-[10px] font-bold uppercase tracking-[0.18em] text-steel">Contacts List</p>
