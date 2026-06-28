@@ -3,6 +3,8 @@ import { createHeader } from './shell/header.js';
 import { createSidebar } from './shell/sidebar.js';
 import { createWidgetDeck } from './shell/widgetDeck.js';
 import { createVaultModule } from './vault/vault.js';
+import { deriveKey, encryptData, decryptData, generateSalt } from './vault/crypto.js';
+import { hasVaultData, getVaultSalt, getVaultIv, getVaultCiphertext, saveVaultData, getVaultPreferences, saveVaultPreferences } from './vault/storage.js';
 import { createContactsModule } from './contacts/contacts.js';
 import { initializeIfEmpty, loadContacts, saveContacts, exportToJSON, importFromJSON, migrateContacts } from './contacts/storage.js';
 import { getItem, setItem } from './shared/storage.js';
@@ -20,6 +22,7 @@ let activeSettingsSection = 'account';
 let activeLinksCategory = 'communications';
 let sidebarCollapsed = getItem('lo_command_sidebar_collapsed', false);
 const WORKSPACE_PROFILE_KEY = 'lo_command_workspace_profile';
+const AUTH_SESSION_KEY = 'lo_command_auth_session';
 
 const app = document.getElementById('app');
 const DEFAULT_WORKSPACE_PROFILE = {
@@ -31,6 +34,9 @@ const DEFAULT_WORKSPACE_PROFILE = {
   roleTitle: 'Underwriter',
   profilePhoto: '',
 };
+const toastContainer = document.createElement('div');
+toastContainer.className = 'fixed right-6 top-6 z-[160] flex flex-col gap-3 pointer-events-none';
+app.appendChild(toastContainer);
 
 // Create static components
 initializeIfEmpty();
@@ -47,6 +53,9 @@ const headerAccountTrigger = header.querySelector('#header-account-trigger');
 const headerAccountMenu = header.querySelector('#header-account-menu');
 const defaultGlobalSearchPlaceholder = globalSearchInput?.getAttribute('placeholder') || 'Search contacts, modules, and actions';
 const WORKSPACE_LINKS_KEY = 'lo_command_workspace_links';
+const WORKSPACE_LINK_CATEGORIES_KEY = 'lo_command_workspace_link_categories';
+const UNASSIGNED_LINK_CATEGORY = 'unassigned';
+const UNASSIGNED_LINK_CATEGORY_LABEL = 'Unassigned';
 const DEFAULT_WORKSPACE_LINKS = [
   { id: 'lnk-1', name: 'Microsoft Teams', url: 'https://teams.microsoft.com', category: 'communications', altFaviconDomain: '', bookmarked: true },
   { id: 'lnk-2', name: 'Zoom', url: 'https://zoom.us/start/videomeeting', category: 'communications', altFaviconDomain: '', bookmarked: true },
@@ -58,13 +67,21 @@ const DEFAULT_WORKSPACE_LINKS = [
   { id: 'lnk-8', name: 'Optimal Blue', url: 'https://optimalblue.com/login', category: 'mortgage-tech', altFaviconDomain: '', bookmarked: false },
   { id: 'lnk-9', name: 'LenderHomepage', url: 'https://app.lenderhomepage.com', category: 'lender-portals', altFaviconDomain: '', bookmarked: false },
 ];
-const LINK_CATEGORY_OPTIONS = [
+const DEFAULT_LINK_CATEGORIES = [
   { key: 'communications', label: 'Communications' },
   { key: 'mlg-platforms', label: 'MLG Platforms' },
   { key: 'mortgage-tech', label: 'Mortgage Tech' },
   { key: 'productivity', label: 'Productivity' },
   { key: 'lender-portals', label: 'Lender Portals' },
 ];
+
+function isUnassignedLinkCategory(categoryKey) {
+  return categoryKey === UNASSIGNED_LINK_CATEGORY;
+}
+
+function getSystemLinkCategory() {
+  return { key: UNASSIGNED_LINK_CATEGORY, label: UNASSIGNED_LINK_CATEGORY_LABEL };
+}
 
 function loadWorkspaceLinks() {
   const links = getItem(WORKSPACE_LINKS_KEY, null);
@@ -73,12 +90,56 @@ function loadWorkspaceLinks() {
     return DEFAULT_WORKSPACE_LINKS.slice();
   }
   return Array.isArray(links)
-    ? links.map((link) => ({ ...link, altFaviconDomain: link.altFaviconDomain || '', bookmarked: Boolean(link.bookmarked) }))
+    ? links.map((link) => ({
+      ...link,
+      altFaviconDomain: link.altFaviconDomain || '',
+      bookmarked: Boolean(link.bookmarked),
+      category: slugifyCategoryKey(link.category || '') || UNASSIGNED_LINK_CATEGORY,
+    }))
     : DEFAULT_WORKSPACE_LINKS.slice();
 }
 
 function saveWorkspaceLinks(links) {
   setItem(WORKSPACE_LINKS_KEY, links);
+}
+
+function slugifyCategoryKey(value) {
+  return String(value || '')
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/^-+|-+$/g, '');
+}
+
+function loadLinkCategories() {
+  const saved = getItem(WORKSPACE_LINK_CATEGORIES_KEY, null);
+  if (!Array.isArray(saved) || saved.length === 0) {
+    setItem(WORKSPACE_LINK_CATEGORIES_KEY, DEFAULT_LINK_CATEGORIES);
+    return DEFAULT_LINK_CATEGORIES.slice();
+  }
+
+  const normalized = saved
+    .map((category) => ({
+      key: slugifyCategoryKey(category?.key || category?.label || ''),
+      label: String(category?.label || '').trim(),
+    }))
+    .filter((category) => category.key && category.label && !isUnassignedLinkCategory(category.key));
+
+  return normalized.length ? normalized : DEFAULT_LINK_CATEGORIES.slice();
+}
+
+function getSettingsLinkCategories(links = loadWorkspaceLinks()) {
+  const categories = loadLinkCategories().filter((category) => !isUnassignedLinkCategory(category.key));
+  const hasUnassignedLinks = links.some((link) => isUnassignedLinkCategory(link.category));
+  return hasUnassignedLinks ? [...categories, getSystemLinkCategory()] : categories;
+}
+
+function getAssignableLinkCategories() {
+  return loadLinkCategories().filter((category) => !isUnassignedLinkCategory(category.key));
+}
+
+function saveLinkCategories(categories) {
+  setItem(WORKSPACE_LINK_CATEGORIES_KEY, categories);
 }
 
 function loadWorkspaceProfile() {
@@ -92,6 +153,14 @@ function loadWorkspaceProfile() {
 
 function saveWorkspaceProfile(profile) {
   setItem(WORKSPACE_PROFILE_KEY, profile);
+}
+
+function isAuthenticated() {
+  return Boolean(getItem(AUTH_SESSION_KEY, false));
+}
+
+function setAuthenticated(value) {
+  setItem(AUTH_SESSION_KEY, Boolean(value));
 }
 
 function getInitials(value, fallback = 'M') {
@@ -284,8 +353,26 @@ function hideBackdrop(backdrop, panel) {
   setTimeout(() => backdrop.classList.add('hidden'), 180);
 }
 
+function syncAuthOverlay() {
+  authOverlay.classList.toggle('hidden', isAuthenticated());
+}
+
+function showToast(message) {
+  const toast = document.createElement('div');
+  toast.className = 'pointer-events-auto min-w-[220px] rounded-2xl border border-[#314b71] bg-[linear-gradient(180deg,rgba(20,39,67,0.98)_0%,rgba(12,24,42,0.99)_100%)] px-4 py-3 text-sm font-semibold text-white shadow-[0_20px_40px_rgba(0,0,0,0.28)] opacity-0 translate-y-[-6px] transition-all duration-200';
+  toast.textContent = message;
+  toastContainer.appendChild(toast);
+  requestAnimationFrame(() => {
+    toast.classList.remove('opacity-0', 'translate-y-[-6px]');
+  });
+  setTimeout(() => {
+    toast.classList.add('opacity-0', 'translate-y-[-6px]');
+    setTimeout(() => toast.remove(), 200);
+  }, 2200);
+}
+
 const backupRestoreBackdrop = document.createElement('div');
-backupRestoreBackdrop.className = 'fixed inset-0 z-[120] hidden items-center justify-center bg-navy/60 p-4 opacity-0 backdrop-blur-sm transition-all duration-200';
+backupRestoreBackdrop.className = 'fixed inset-0 z-[120] hidden flex items-center justify-center bg-navy/60 p-4 opacity-0 backdrop-blur-sm transition-all duration-200';
 backupRestoreBackdrop.innerHTML = `
   <div class="w-full max-w-lg rounded-[1.8rem] border border-softBlue2 bg-white shadow-[0_30px_80px_rgba(15,23,42,0.25)] transform scale-95 transition-all duration-200">
     <div class="flex items-center justify-between border-b border-softBlue1 px-6 py-5">
@@ -343,8 +430,61 @@ logoutBackdrop.innerHTML = `
   </div>
 `;
 
+const authOverlay = document.createElement('div');
+authOverlay.className = 'fixed inset-0 z-[130] flex items-center justify-center bg-[radial-gradient(circle_at_top,#203f6d_0%,#13243f_42%,#0b1628_100%)] p-6';
+authOverlay.innerHTML = `
+  <div class="absolute inset-0 bg-[linear-gradient(135deg,rgba(255,255,255,0.05)_0%,rgba(255,255,255,0)_35%)]"></div>
+  <div class="relative w-full max-w-md overflow-hidden rounded-[2rem] border border-[#314b71] bg-[linear-gradient(180deg,rgba(20,39,67,0.98)_0%,rgba(12,24,42,0.99)_100%)] p-7 text-white shadow-[0_30px_80px_rgba(0,0,0,0.35)]">
+    <div class="flex items-center gap-3">
+      <div class="flex h-14 w-14 items-center justify-center rounded-[1.2rem] border border-gold/70 bg-[radial-gradient(circle_at_30%_28%,#f4d777_0%,#cfa52e_42%,#8f6a14_100%)] text-xl font-black text-navy shadow-[inset_0_1px_0_rgba(255,255,255,0.4)]">
+        LC
+      </div>
+      <div>
+        <p class="text-[11px] font-bold uppercase tracking-[0.2em] text-softBlue2">Secure Access</p>
+        <h2 class="mt-1 text-[1.9rem] font-black tracking-tight text-white">Sign In</h2>
+      </div>
+    </div>
+
+    <p class="mt-4 text-sm leading-6 text-slate-300">Use email and password as the primary login method. Google and Outlook sign-in will be integrated later.</p>
+
+    <form id="auth-signin-form" class="mt-6 space-y-4">
+      <label class="block">
+        <span class="mb-2 block text-[11px] font-bold uppercase tracking-[0.18em] text-softBlue2">Email</span>
+        <input id="auth-email" type="email" required placeholder="name@company.com" class="w-full rounded-2xl border border-[#34527c] bg-white/[0.05] px-4 py-3 text-sm text-white placeholder:text-slate-400 focus:outline-none focus:border-[#5476a2]">
+      </label>
+      <label class="block">
+        <span class="mb-2 block text-[11px] font-bold uppercase tracking-[0.18em] text-softBlue2">Password</span>
+        <input id="auth-password" type="password" required placeholder="Enter your password" class="w-full rounded-2xl border border-[#34527c] bg-white/[0.05] px-4 py-3 text-sm text-white placeholder:text-slate-400 focus:outline-none focus:border-[#5476a2]">
+      </label>
+      <button type="submit" class="inline-flex w-full items-center justify-center gap-2 rounded-2xl bg-gold px-5 py-3 text-sm font-bold text-navy transition hover:bg-[#d9b23f]">
+        <i class="fa-solid fa-arrow-right-to-bracket text-xs"></i>
+        <span>Sign In</span>
+      </button>
+    </form>
+
+    <div class="mt-6">
+      <div class="flex items-center gap-3">
+        <div class="h-px flex-1 bg-white/10"></div>
+        <span class="text-[11px] font-bold uppercase tracking-[0.18em] text-softBlue2">Coming Later</span>
+        <div class="h-px flex-1 bg-white/10"></div>
+      </div>
+      <div class="mt-4 grid grid-cols-1 gap-3 sm:grid-cols-2">
+        <button type="button" disabled class="inline-flex items-center justify-center gap-2 rounded-2xl border border-[#34527c] bg-white/[0.04] px-4 py-3 text-sm font-bold text-slate-300 opacity-70 cursor-not-allowed">
+          <i class="fa-brands fa-google text-sm"></i>
+          <span>Google</span>
+        </button>
+        <button type="button" disabled class="inline-flex items-center justify-center gap-2 rounded-2xl border border-[#34527c] bg-white/[0.04] px-4 py-3 text-sm font-bold text-slate-300 opacity-70 cursor-not-allowed">
+          <i class="fa-brands fa-microsoft text-sm"></i>
+          <span>Outlook</span>
+        </button>
+      </div>
+    </div>
+  </div>
+`;
+
 app.appendChild(backupRestoreBackdrop);
 app.appendChild(logoutBackdrop);
+app.appendChild(authOverlay);
 
 // Create workspace layout wrapper
 const workspace = document.createElement('div');
@@ -409,8 +549,9 @@ window.addEventListener('deck-quick-action', (event) => {
 
 function getSettingsContentMarkup() {
   if (activeSettingsSection === 'links') {
+    const categories = getAssignableLinkCategories();
     return `
-      <div class="max-w-6xl">
+      <div class="mx-auto max-w-6xl">
         <h1 class="text-4xl font-black tracking-tight text-navy">Links</h1>
         <p class="mt-2 text-base text-steel">Organize bookmarks and quick-link behavior.</p>
 
@@ -433,7 +574,7 @@ function getSettingsContentMarkup() {
 
             <div>
               <p class="text-[11px] font-bold uppercase tracking-[0.18em] text-steel">Add A New Link Inline</p>
-              <div class="mt-3 grid grid-cols-1 xl:grid-cols-[1fr_1.5fr_1.2fr_0.8fr_auto] gap-3">
+              <div class="mt-3 grid grid-cols-1 xl:grid-cols-[minmax(0,1fr)_minmax(0,1.5fr)_minmax(0,1.2fr)_minmax(0,0.8fr)_auto] gap-3">
                 <input id="settings-link-name" type="text" placeholder="Link name" class="rounded-2xl border border-softBlue2 bg-[#f6f9fd] px-4 py-3 text-sm text-navy placeholder-slate-400 focus:outline-none focus:border-steel">
                 <div class="relative">
                   <div class="pointer-events-none absolute left-4 top-1/2 -translate-y-1/2 flex h-7 w-7 items-center justify-center rounded-lg border border-softBlue2 bg-white shadow-sm">
@@ -443,15 +584,133 @@ function getSettingsContentMarkup() {
                 </div>
                 <input id="settings-link-alt-domain" type="text" placeholder="Alternate favicon domain" class="rounded-2xl border border-softBlue2 bg-[#f6f9fd] px-4 py-3 text-sm text-navy placeholder-slate-400 focus:outline-none focus:border-steel">
                 <select id="settings-link-category" class="rounded-2xl border border-softBlue2 bg-[#f6f9fd] px-4 py-3 text-sm text-navy focus:outline-none focus:border-steel">
-                  ${LINK_CATEGORY_OPTIONS.map((option) => `<option value="${option.key}" ${option.key === activeLinksCategory ? 'selected' : ''}>${option.label}</option>`).join('')}
+                  ${categories.map((option) => `<option value="${option.key}" ${option.key === activeLinksCategory ? 'selected' : ''}>${option.label}</option>`).join('')}
                 </select>
                 <button id="settings-link-add-btn" type="button" class="rounded-2xl bg-navy px-5 py-3 text-sm font-bold text-white hover:bg-steel transition">+ Add</button>
+              </div>
+              <div class="mt-5 flex justify-start">
+                <button id="settings-manage-categories-btn" type="button" class="inline-flex items-center justify-center gap-2 self-start rounded-2xl border border-softBlue2 px-4 py-2.5 text-sm font-bold text-navy whitespace-nowrap hover:bg-softBlue1 transition">
+                  <i class="fa-solid fa-tags text-xs"></i>
+                  <span>Manage Categories</span>
+                </button>
               </div>
             </div>
 
             <div id="settings-links-categories" class="flex flex-wrap gap-3"></div>
 
             <div id="settings-links-list" class="space-y-2"></div>
+          </div>
+        </div>
+
+        <div id="settings-categories-backdrop" class="fixed inset-0 z-[120] hidden items-center justify-center bg-navy/60 p-4 opacity-0 backdrop-blur-sm transition-all duration-200">
+          <div id="settings-categories-panel" class="relative mx-auto w-full max-w-2xl overflow-hidden rounded-[1.8rem] border border-softBlue2 bg-white shadow-[0_30px_80px_rgba(15,23,42,0.25)] transform scale-95 transition-all duration-200">
+            <div class="flex items-center justify-between border-b border-softBlue1 px-6 py-5">
+              <div>
+                <p class="text-[11px] font-bold uppercase tracking-[0.18em] text-gold">Category Manager</p>
+                <h3 class="mt-1 text-2xl font-black tracking-tight text-navy">Manage Link Categories</h3>
+              </div>
+              <button type="button" id="settings-categories-close" class="flex h-10 w-10 items-center justify-center rounded-xl text-steel transition hover:bg-softBlue1 hover:text-navy focus:outline-none">
+                <i class="fa-solid fa-xmark text-sm"></i>
+              </button>
+            </div>
+            <div class="space-y-5 px-6 py-6">
+              <div class="rounded-[1.4rem] border border-softBlue2 bg-[#f8fbff] p-4">
+                <p class="text-[11px] font-bold uppercase tracking-[0.18em] text-steel">Add Category</p>
+                <div class="mt-3 flex flex-col gap-3 sm:flex-row">
+                  <input id="settings-new-category-name" type="text" placeholder="New category name" class="flex-1 rounded-2xl border border-softBlue2 bg-white px-4 py-3 text-sm text-navy placeholder-slate-400 focus:outline-none focus:border-steel">
+                  <button id="settings-add-category-btn" type="button" class="rounded-2xl bg-navy px-5 py-3 text-sm font-bold text-white hover:bg-steel transition">Add Category</button>
+                </div>
+              </div>
+              <div>
+                <div class="flex items-center justify-between">
+                  <p class="text-[11px] font-bold uppercase tracking-[0.18em] text-steel">Current Categories</p>
+                  <p class="text-xs text-steel">Delete will move links into Unassigned until you reassign them.</p>
+                </div>
+                <div id="settings-categories-list" class="mt-3 space-y-2"></div>
+              </div>
+            </div>
+
+          </div>
+        </div>
+      </div>
+    `;
+  }
+
+  if (activeSettingsSection === 'security') {
+    const vaultPreferences = getVaultPreferences();
+    return `
+      <div class="mx-auto max-w-5xl">
+        <h1 class="text-4xl font-black tracking-tight text-navy">Security</h1>
+        <p class="mt-2 text-base text-steel">Manage your Vault PIN and automatic lock behavior.</p>
+
+        <div class="mt-8 grid grid-cols-1 xl:grid-cols-[1.05fr_0.95fr] gap-6">
+          <div class="rounded-3xl border border-softBlue2 bg-white p-6 shadow-sm">
+            <div class="flex items-center gap-2 text-gold">
+              <i class="fa-solid fa-key text-sm"></i>
+              <span class="text-[11px] font-bold uppercase tracking-[0.18em]">Vault PIN</span>
+            </div>
+            <form id="settings-security-pin-form" class="mt-5 space-y-4">
+              <label class="block">
+                <span class="mb-2 block text-[11px] font-bold uppercase tracking-[0.18em] text-steel">Current 4-digit PIN</span>
+                <input id="settings-pin-current" type="password" inputmode="numeric" maxlength="4" pattern="[0-9]{4}" required placeholder="Enter current PIN" class="w-full rounded-2xl border border-softBlue2 bg-[#f6f9fd] px-4 py-3 text-center text-sm font-semibold tracking-[0.35em] text-navy placeholder-slate-400 focus:outline-none focus:border-steel">
+              </label>
+              <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <label class="block">
+                  <span class="mb-2 block text-[11px] font-bold uppercase tracking-[0.18em] text-steel">New 4-digit PIN</span>
+                  <input id="settings-pin-new" type="password" inputmode="numeric" maxlength="4" pattern="[0-9]{4}" required placeholder="New PIN" class="w-full rounded-2xl border border-softBlue2 bg-[#f6f9fd] px-4 py-3 text-center text-sm font-semibold tracking-[0.35em] text-navy placeholder-slate-400 focus:outline-none focus:border-steel">
+                </label>
+                <label class="block">
+                  <span class="mb-2 block text-[11px] font-bold uppercase tracking-[0.18em] text-steel">Confirm New PIN</span>
+                  <input id="settings-pin-confirm" type="password" inputmode="numeric" maxlength="4" pattern="[0-9]{4}" required placeholder="Confirm PIN" class="w-full rounded-2xl border border-softBlue2 bg-[#f6f9fd] px-4 py-3 text-center text-sm font-semibold tracking-[0.35em] text-navy placeholder-slate-400 focus:outline-none focus:border-steel">
+                </label>
+              </div>
+              <div class="flex justify-center">
+                <button type="submit" class="inline-flex items-center gap-2 rounded-2xl bg-navy px-5 py-3 text-sm font-bold text-white hover:bg-steel transition">
+                  <i class="fa-solid fa-shield text-xs"></i>
+                  <span>Update PIN</span>
+                </button>
+              </div>
+            </form>
+          </div>
+
+          <div class="rounded-3xl border border-softBlue2 bg-white p-6 shadow-sm">
+            <div class="flex items-center gap-2 text-gold">
+              <i class="fa-solid fa-lock text-sm"></i>
+              <span class="text-[11px] font-bold uppercase tracking-[0.18em]">Vault Behavior</span>
+            </div>
+            <div class="mt-5 space-y-4">
+              <label class="block">
+                <span class="mb-2 block text-[11px] font-bold uppercase tracking-[0.18em] text-steel">Auto-lock Timer</span>
+                <select id="settings-security-autolock" class="w-full rounded-2xl border border-softBlue2 bg-[#f6f9fd] px-4 py-3 text-sm font-semibold text-navy focus:outline-none focus:border-steel">
+                  ${[
+                    { value: 1, label: '1 minute' },
+                    { value: 5, label: '5 minutes' },
+                    { value: 10, label: '10 minutes' },
+                    { value: 15, label: '15 minutes' },
+                  ].map((option) => `<option value="${option.value}" ${Number(vaultPreferences.autoLockMinutes) === option.value ? 'selected' : ''}>${option.label}</option>`).join('')}
+                </select>
+              </label>
+
+              <label class="flex items-start gap-3 rounded-[1.4rem] border border-softBlue2 bg-[#f8fbff] px-4 py-4">
+                <input id="settings-security-lock-logout" type="checkbox" class="mt-1 h-4 w-4 rounded border-softBlue2 accent-gold" ${vaultPreferences.lockOnLogout ? 'checked' : ''}>
+                <span>
+                  <span class="block text-sm font-bold text-navy">Lock vault on logout</span>
+                  <span class="mt-1 block text-xs leading-5 text-steel">When you log out, the vault will be locked before the session ends.</span>
+                </span>
+              </label>
+
+              <div class="rounded-[1.4rem] border border-softBlue2 bg-[#f8fbff] p-4">
+                <p class="text-sm font-bold text-navy">Recovery Notice</p>
+                <p class="mt-2 text-xs leading-6 text-steel">Your vault is encrypted with your PIN. If you forget it, existing vault contents may not be recoverable without a backup.</p>
+              </div>
+
+              <div class="flex justify-center">
+                <button id="settings-security-save" type="button" class="inline-flex items-center gap-2 rounded-2xl bg-navy px-5 py-3 text-sm font-bold text-white hover:bg-steel transition">
+                  <i class="fa-solid fa-floppy-disk text-xs"></i>
+                  <span>Save Security Settings</span>
+                </button>
+              </div>
+            </div>
           </div>
         </div>
       </div>
@@ -463,7 +722,7 @@ function getSettingsContentMarkup() {
   const previewNmls = profile.nmlsNumber?.trim();
 
   return `
-    <div class="max-w-6xl">
+    <div class="mx-auto max-w-6xl">
       <div class="flex flex-col gap-4 xl:flex-row xl:items-start xl:justify-between">
         <div>
           <h1 class="text-4xl font-black tracking-tight text-navy">Account</h1>
@@ -616,7 +875,33 @@ function setupLinksManager() {
   const altDomainEl = canvas.querySelector('#settings-link-alt-domain');
   const addBtn = canvas.querySelector('#settings-link-add-btn');
   const faviconPreviewEl = canvas.querySelector('#settings-link-favicon-preview');
+  const manageCategoriesBtn = canvas.querySelector('#settings-manage-categories-btn');
+  const categoriesBackdrop = canvas.querySelector('#settings-categories-backdrop');
+  const categoriesPanel = canvas.querySelector('#settings-categories-panel');
+  const categoriesCloseBtn = canvas.querySelector('#settings-categories-close');
+  const categoriesListEl = canvas.querySelector('#settings-categories-list');
+  const newCategoryNameEl = canvas.querySelector('#settings-new-category-name');
+  const addCategoryBtn = canvas.querySelector('#settings-add-category-btn');
   let editingLinkId = null;
+  let pendingDeleteCategoryKey = null;
+  let categories = getSettingsLinkCategories();
+
+  function getCategoryLabel(categoryKey) {
+    if (isUnassignedLinkCategory(categoryKey)) return UNASSIGNED_LINK_CATEGORY_LABEL;
+    return categories.find((category) => category.key === categoryKey)?.label || '';
+  }
+
+  function renderCategorySelect() {
+    const assignableCategories = getAssignableLinkCategories();
+    const selectedValue = categoryEl.value;
+    categoryEl.innerHTML = assignableCategories.map((category) => `
+      <option value="${category.key}">${category.label}</option>
+    `).join('');
+    const fallbackValue = activeLinksCategory !== 'all' && assignableCategories.some((category) => category.key === activeLinksCategory)
+      ? activeLinksCategory
+      : assignableCategories[0]?.key || '';
+    categoryEl.value = assignableCategories.some((category) => category.key === selectedValue) ? selectedValue : fallbackValue;
+  }
 
   function updateFaviconPreview() {
     applyFaviconToImage(faviconPreviewEl, urlEl.value || 'example.com', altDomainEl.value);
@@ -636,7 +921,7 @@ function setupLinksManager() {
     const links = loadWorkspaceLinks();
     const pills = [
       { key: 'all', label: 'All Links', count: links.length },
-      ...LINK_CATEGORY_OPTIONS.map((option) => ({
+      ...categories.map((option) => ({
         key: option.key,
         label: option.label,
         count: links.filter((link) => link.category === option.key).length,
@@ -659,6 +944,7 @@ function setupLinksManager() {
   }
 
   function renderList() {
+    const assignableCategories = getAssignableLinkCategories();
     const links = getVisibleLinks();
     listEl.innerHTML = links.map((link) => `
       <div class="flex items-center gap-4 rounded-2xl border border-softBlue2 bg-white px-4 py-3 shadow-sm">
@@ -675,6 +961,10 @@ function setupLinksManager() {
           <div class="text-sm font-bold text-navy truncate">${escapeHTML(link.name)}</div>
           <a href="${escapeHTML(normalizeLinkUrl(link.url))}" target="_blank" rel="noreferrer" class="text-xs text-steel hover:underline truncate block">${escapeHTML(normalizeLinkUrl(link.url))}</a>
         </div>
+        <select data-link-category-select="${link.id}" class="w-[11rem] rounded-2xl border border-softBlue2 bg-[#f6f9fd] px-3 py-2 text-sm text-navy focus:outline-none focus:border-steel">
+          <option value="${UNASSIGNED_LINK_CATEGORY}" ${isUnassignedLinkCategory(link.category) ? 'selected' : ''}>${UNASSIGNED_LINK_CATEGORY_LABEL}</option>
+          ${assignableCategories.map((category) => `<option value="${category.key}" ${category.key === link.category ? 'selected' : ''}>${category.label}</option>`).join('')}
+        </select>
         <div class="flex items-center gap-2">
           <button type="button" data-edit-link="${link.id}" class="h-9 w-9 rounded-xl border border-softBlue2 text-steel hover:bg-softBlue1 transition">
             <i class="fa-regular fa-pen-to-square text-sm"></i>
@@ -706,9 +996,125 @@ function setupLinksManager() {
     nameEl.value = '';
     urlEl.value = '';
     altDomainEl.value = '';
-    categoryEl.value = activeLinksCategory === 'all' ? 'communications' : activeLinksCategory;
+    renderCategorySelect();
+    if (activeLinksCategory !== 'all' && categories.some((category) => category.key === activeLinksCategory)) {
+      categoryEl.value = activeLinksCategory;
+    }
     addBtn.textContent = '+ Add';
     updateFaviconPreview();
+  }
+
+  function openCategoriesModal() {
+    categoriesBackdrop.classList.remove('hidden');
+    requestAnimationFrame(() => {
+      categoriesBackdrop.classList.remove('opacity-0');
+      categoriesPanel.classList.remove('scale-95');
+    });
+  }
+
+  function closeCategoriesModal() {
+    categoriesBackdrop.classList.add('opacity-0');
+    categoriesPanel.classList.add('scale-95');
+    setTimeout(() => categoriesBackdrop.classList.add('hidden'), 180);
+  }
+
+  function openInlineCategoryDelete(categoryKey) {
+    pendingDeleteCategoryKey = categoryKey;
+    renderCategoriesManager();
+  }
+
+  function closeInlineCategoryDelete() {
+    pendingDeleteCategoryKey = null;
+    renderCategoriesManager();
+  }
+
+  function syncCategories() {
+    categories = getSettingsLinkCategories();
+    if (activeLinksCategory !== 'all' && !categories.some((category) => category.key === activeLinksCategory)) {
+      activeLinksCategory = 'all';
+    }
+    renderCategorySelect();
+    renderCategoryPills();
+    renderList();
+    resetForm();
+  }
+
+  function renderCategoriesManager() {
+    const links = loadWorkspaceLinks();
+    categoriesListEl.innerHTML = categories
+      .filter((category) => !isUnassignedLinkCategory(category.key))
+      .map((category) => {
+      const linkCount = links.filter((link) => link.category === category.key).length;
+      const isDeletePending = pendingDeleteCategoryKey === category.key;
+
+      return `
+        <div class="rounded-[1.35rem] border border-softBlue2 bg-[#f8fbff] p-4">
+          <div class="flex flex-col gap-3 lg:flex-row lg:items-center">
+            <div class="flex-1">
+              <label class="block text-[11px] font-bold uppercase tracking-[0.18em] text-steel">Category Name</label>
+              <input
+                type="text"
+                value="${escapeHTML(category.label)}"
+                data-category-rename="${category.key}"
+                class="mt-2 w-full rounded-2xl border border-softBlue2 bg-white px-4 py-3 text-sm font-semibold text-navy placeholder-slate-400 focus:outline-none focus:border-steel"
+              >
+              <p class="mt-2 text-xs text-steel">${linkCount} link${linkCount === 1 ? '' : 's'}</p>
+            </div>
+            <div class="flex flex-col gap-2 lg:min-w-[220px]">
+              ${isDeletePending ? `
+                <div class="flex items-center justify-between gap-3 rounded-2xl border border-[#7a2331] bg-[#39131b] px-4 py-3 text-sm">
+                  <span class="font-semibold text-[#ffd2db]">Deleted links move to ${UNASSIGNED_LINK_CATEGORY_LABEL}</span>
+                  <div class="flex items-center gap-3">
+                    <button type="button" data-category-delete-cancel="${category.key}" class="text-sm font-bold text-[#cfdaf1] transition hover:text-white">Cancel</button>
+                    <button type="button" data-category-delete-confirm="${category.key}" class="text-sm font-bold text-[#ff6b76] transition hover:text-[#ff8f99]">Delete</button>
+                  </div>
+                </div>
+              ` : `
+                <div class="flex gap-2">
+                  <button type="button" data-category-save="${category.key}" class="flex-1 rounded-2xl border border-softBlue2 px-4 py-2.5 text-sm font-bold text-navy transition hover:bg-softBlue1">Save</button>
+                  <button type="button" data-category-delete="${category.key}" class="flex-1 rounded-2xl bg-red-50 px-4 py-2.5 text-sm font-bold text-red-600 transition hover:bg-red-100">Delete</button>
+                </div>
+              `}
+            </div>
+          </div>
+        </div>
+      `;
+    }).join('');
+  }
+
+  function addCategory() {
+    const label = newCategoryNameEl.value.trim();
+    const key = slugifyCategoryKey(label);
+    if (!label || !key) return;
+    if (categories.some((category) => category.key === key)) return;
+    categories = [...categories, { key, label }];
+    saveLinkCategories(categories);
+    newCategoryNameEl.value = '';
+    syncCategories();
+    renderCategoriesManager();
+  }
+
+  function renameCategory(categoryKey) {
+    const input = categoriesListEl.querySelector(`[data-category-rename="${categoryKey}"]`);
+    const label = input?.value.trim() || '';
+    if (!label) return;
+    const nextCategories = loadLinkCategories().map((category) => category.key === categoryKey ? { ...category, label } : category);
+    saveLinkCategories(nextCategories);
+    syncCategories();
+    renderCategoriesManager();
+  }
+
+  function deleteCategory(categoryKey) {
+    const links = loadWorkspaceLinks().map((link) => link.category === categoryKey ? { ...link, category: UNASSIGNED_LINK_CATEGORY, bookmarked: false } : link);
+    saveWorkspaceLinks(links);
+    const nextCategories = loadLinkCategories().filter((category) => category.key !== categoryKey);
+    saveLinkCategories(nextCategories);
+    if (activeLinksCategory === categoryKey) {
+      activeLinksCategory = UNASSIGNED_LINK_CATEGORY;
+    }
+    syncCategories();
+    renderCategoriesManager();
+    window.dispatchEvent(new CustomEvent('workspace-links-updated'));
   }
 
   function upsertLink() {
@@ -741,6 +1147,21 @@ function setupLinksManager() {
   urlEl.addEventListener('input', updateFaviconPreview);
   altDomainEl.addEventListener('input', updateFaviconPreview);
   addBtn.addEventListener('click', upsertLink);
+  manageCategoriesBtn?.addEventListener('click', () => {
+    renderCategoriesManager();
+    openCategoriesModal();
+  });
+  categoriesCloseBtn?.addEventListener('click', closeCategoriesModal);
+  categoriesBackdrop?.addEventListener('click', (event) => {
+    if (event.target === categoriesBackdrop) closeCategoriesModal();
+  });
+  addCategoryBtn?.addEventListener('click', addCategory);
+  newCategoryNameEl?.addEventListener('keydown', (event) => {
+    if (event.key === 'Enter') {
+      event.preventDefault();
+      addCategory();
+    }
+  });
 
   categoriesEl.addEventListener('click', (event) => {
     const button = event.target.closest('[data-link-category]');
@@ -750,6 +1171,44 @@ function setupLinksManager() {
     renderList();
     if (!editingLinkId) {
       categoryEl.value = activeLinksCategory === 'all' ? categoryEl.value : activeLinksCategory;
+    }
+  });
+
+  listEl.addEventListener('change', (event) => {
+    const categorySelect = event.target.closest('[data-link-category-select]');
+    if (!categorySelect) return;
+    const linkId = categorySelect.getAttribute('data-link-category-select');
+    const nextCategory = categorySelect.value;
+    const nextLinks = loadWorkspaceLinks().map((link) => link.id === linkId ? { ...link, category: nextCategory } : link);
+    saveWorkspaceLinks(nextLinks);
+    if (activeLinksCategory !== 'all' && activeLinksCategory !== nextCategory && isUnassignedLinkCategory(activeLinksCategory)) {
+      activeLinksCategory = 'all';
+    }
+    syncCategories();
+    renderCategoriesManager();
+    window.dispatchEvent(new CustomEvent('workspace-links-updated'));
+  });
+
+  categoriesListEl?.addEventListener('click', (event) => {
+    const saveBtn = event.target.closest('[data-category-save]');
+    if (saveBtn) {
+      renameCategory(saveBtn.getAttribute('data-category-save'));
+      return;
+    }
+    const cancelDeleteBtn = event.target.closest('[data-category-delete-cancel]');
+    if (cancelDeleteBtn) {
+      closeInlineCategoryDelete();
+      return;
+    }
+    const confirmDeleteBtn = event.target.closest('[data-category-delete-confirm]');
+    if (confirmDeleteBtn) {
+      deleteCategory(confirmDeleteBtn.getAttribute('data-category-delete-confirm'));
+      pendingDeleteCategoryKey = null;
+      return;
+    }
+    const deleteBtn = event.target.closest('[data-category-delete]');
+    if (deleteBtn) {
+      openInlineCategoryDelete(deleteBtn.getAttribute('data-category-delete'));
     }
   });
 
@@ -773,6 +1232,8 @@ function setupLinksManager() {
       const link = loadWorkspaceLinks().find((item) => item.id === editBtn.getAttribute('data-edit-link'));
       if (!link) return;
       editingLinkId = link.id;
+      categories = loadLinkCategories();
+      renderCategorySelect();
       nameEl.value = link.name;
       urlEl.value = link.url;
       categoryEl.value = link.category;
@@ -795,9 +1256,8 @@ function setupLinksManager() {
     }
   });
 
-  renderCategoryPills();
-  renderList();
-  resetForm();
+  categories = getSettingsLinkCategories();
+  syncCategories();
 }
 
 function setupAccountSettings() {
@@ -929,6 +1389,63 @@ function setupAccountSettings() {
   refreshPreview();
 }
 
+function setupSecuritySettings() {
+  const pinForm = canvas.querySelector('#settings-security-pin-form');
+  const currentPinEl = canvas.querySelector('#settings-pin-current');
+  const newPinEl = canvas.querySelector('#settings-pin-new');
+  const confirmPinEl = canvas.querySelector('#settings-pin-confirm');
+  const autoLockEl = canvas.querySelector('#settings-security-autolock');
+  const lockOnLogoutEl = canvas.querySelector('#settings-security-lock-logout');
+  const saveSecurityBtn = canvas.querySelector('#settings-security-save');
+
+  async function updatePin(event) {
+    event.preventDefault();
+    const oldPin = currentPinEl.value.trim();
+    const newPin = newPinEl.value.trim();
+    const confirmPin = confirmPinEl.value.trim();
+
+    if (newPin !== confirmPin) {
+      showToast('New PINs do not match');
+      return;
+    }
+    if (!/^\d{4}$/.test(newPin)) {
+      showToast('PIN must be exactly 4 digits');
+      return;
+    }
+    if (!hasVaultData()) {
+      showToast('Vault is not initialized yet');
+      return;
+    }
+
+    try {
+      const currentSalt = getVaultSalt();
+      const currentIv = getVaultIv();
+      const currentCiphertext = getVaultCiphertext();
+      const oldKey = await deriveKey(oldPin, currentSalt);
+      const decryptedItems = await decryptData(oldKey, currentCiphertext, currentIv);
+      const newSalt = generateSalt();
+      const newKey = await deriveKey(newPin, newSalt);
+      const { ciphertext: newCiphertext, iv: newIv } = await encryptData(newKey, decryptedItems);
+      saveVaultData(newSalt, newIv, newCiphertext);
+      pinForm.reset();
+      showToast('Vault PIN updated');
+    } catch {
+      showToast('Current PIN is incorrect');
+    }
+  }
+
+  function saveSecurityPreferences() {
+    saveVaultPreferences({
+      autoLockMinutes: Number(autoLockEl.value) || 5,
+      lockOnLogout: Boolean(lockOnLogoutEl.checked),
+    });
+    showToast('Security settings saved');
+  }
+
+  pinForm?.addEventListener('submit', updatePin);
+  saveSecurityBtn?.addEventListener('click', saveSecurityPreferences);
+}
+
 // Canvas Content Renderer
 function renderCanvas() {
   // Tear down any previously mounted module
@@ -969,41 +1486,43 @@ function renderCanvas() {
     widgetDeck.classList.remove('hidden');
     canvas.className = 'flex-1 overflow-y-auto flex flex-col relative bg-[#f4f7fb]';
     canvas.innerHTML = `
-      <div class="flex min-h-full">
-        <aside class="w-64 bg-[#121a2b] text-slate-200 border-r border-slate-800 flex flex-col">
-          <div class="px-6 py-5 border-b border-white/10">
-            <p class="text-[11px] font-bold uppercase tracking-[0.22em] text-softBlue2/80">Settings</p>
-            <p class="mt-3 text-sm leading-6 text-slate-300">Review profile details and backup access.</p>
-          </div>
+      <div class="flex min-h-full flex-none items-stretch bg-[#f4f7fb]">
+        <aside class="w-64 shrink-0 self-stretch border-r border-slate-800 bg-[#121a2b] text-slate-200 flex flex-col">
+          <div class="sticky top-0 flex h-[calc(100vh-6.25rem)] flex-col">
+            <div class="px-6 py-5 border-b border-white/10">
+              <p class="text-[11px] font-bold uppercase tracking-[0.22em] text-softBlue2/80">Settings</p>
+              <p class="mt-3 text-sm leading-6 text-slate-300">Review profile details and backup access.</p>
+            </div>
 
-          <nav class="px-3 py-5 space-y-1.5">
-            <button type="button" data-settings-section="account" class="w-full flex items-center gap-3 rounded-xl ${activeSettingsSection === 'account' ? 'bg-white/6 border border-softBlue2/20 text-white' : 'text-slate-300 hover:bg-white/5'} px-4 py-3 text-left transition">
-              <i class="fa-regular fa-user text-softBlue2 text-sm"></i>
-              <span class="text-sm font-semibold">Account</span>
-            </button>
-            <button type="button" data-settings-section="privacy" class="w-full flex items-center gap-3 rounded-xl ${activeSettingsSection === 'privacy' ? 'bg-white/6 border border-softBlue2/20 text-white' : 'text-slate-300 hover:bg-white/5'} px-4 py-3 text-left transition">
-              <i class="fa-solid fa-shield-halved text-softBlue2 text-sm"></i>
-              <span class="text-sm font-semibold">Privacy</span>
-            </button>
-            <button type="button" data-settings-section="workspace" class="w-full flex items-center gap-3 rounded-xl ${activeSettingsSection === 'workspace' ? 'bg-white/6 border border-softBlue2/20 text-white' : 'text-slate-300 hover:bg-white/5'} px-4 py-3 text-left transition">
-              <i class="fa-solid fa-sliders text-softBlue2 text-sm"></i>
-              <span class="text-sm font-semibold">Workspace</span>
-            </button>
+            <nav class="px-3 py-5 space-y-1.5">
+              <button type="button" data-settings-section="account" class="w-full flex items-center gap-3 rounded-xl ${activeSettingsSection === 'account' ? 'bg-white/6 border border-softBlue2/20 text-white' : 'text-slate-300 hover:bg-white/5'} px-4 py-3 text-left transition">
+                <i class="fa-regular fa-user text-softBlue2 text-sm"></i>
+                <span class="text-sm font-semibold">Account</span>
+              </button>
+              <button type="button" data-settings-section="security" class="w-full flex items-center gap-3 rounded-xl ${activeSettingsSection === 'security' ? 'bg-white/6 border border-softBlue2/20 text-white' : 'text-slate-300 hover:bg-white/5'} px-4 py-3 text-left transition">
+                <i class="fa-solid fa-shield-halved text-softBlue2 text-sm"></i>
+                <span class="text-sm font-semibold">Security</span>
+              </button>
+              <button type="button" data-settings-section="workspace" class="w-full flex items-center gap-3 rounded-xl ${activeSettingsSection === 'workspace' ? 'bg-white/6 border border-softBlue2/20 text-white' : 'text-slate-300 hover:bg-white/5'} px-4 py-3 text-left transition">
+                <i class="fa-solid fa-sliders text-softBlue2 text-sm"></i>
+                <span class="text-sm font-semibold">Workspace</span>
+              </button>
             <button type="button" data-settings-section="links" class="w-full flex items-center gap-3 rounded-xl ${activeSettingsSection === 'links' ? 'bg-white/6 border border-softBlue2/20 text-white' : 'text-slate-300 hover:bg-white/5'} px-4 py-3 text-left transition">
               <i class="fa-solid fa-link text-softBlue2 text-sm"></i>
               <span class="text-sm font-semibold">Links</span>
             </button>
           </nav>
 
-          <div class="mt-auto p-3 border-t border-white/10">
-            <button type="button" id="settings-back-btn" class="w-full flex items-center gap-3 rounded-xl px-4 py-3 text-left text-slate-300 hover:bg-white/5 transition">
-              <i class="fa-solid fa-arrow-left text-softBlue2 text-sm"></i>
-              <span class="text-sm font-semibold">Back To Hub</span>
-            </button>
+            <div class="mt-auto p-3 border-t border-white/10">
+              <button type="button" id="settings-back-btn" class="w-full flex items-center gap-3 rounded-xl px-4 py-3 text-left text-slate-300 hover:bg-white/5 transition">
+                <i class="fa-solid fa-arrow-left text-softBlue2 text-sm"></i>
+                <span class="text-sm font-semibold">Back To Hub</span>
+              </button>
+            </div>
           </div>
         </aside>
 
-        <section class="flex-1">
+        <section class="flex-1 min-h-full bg-transparent">
           <div class="px-10 py-6 border-b border-slate-200 bg-white flex items-center justify-end">
             <div class="flex items-center gap-3 text-sm text-steel">
               <span>${new Date().toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' })}</span>
@@ -1032,6 +1551,8 @@ function renderCanvas() {
     canvas.querySelector('#settings-open-contacts')?.addEventListener('click', () => activateTab('contacts'));
     if (activeSettingsSection === 'links') {
       setupLinksManager();
+    } else if (activeSettingsSection === 'security') {
+      setupSecuritySettings();
     } else if (activeSettingsSection === 'account') {
       setupAccountSettings();
     }
@@ -1350,6 +1871,7 @@ workspace.appendChild(widgetDeck);
 
 app.appendChild(header);
 app.appendChild(workspace);
+syncAuthOverlay();
 
 headerSettingsBtn?.addEventListener('click', () => activateTab('settings'));
 headerAccountTrigger?.addEventListener('click', (event) => {
@@ -1366,7 +1888,14 @@ headerAccountMenu?.addEventListener('click', (event) => {
     showBackdrop(backupRestoreBackdrop, backupRestoreBackdrop.firstElementChild);
   }
   if (action === 'logout') {
-    showBackdrop(logoutBackdrop, logoutBackdrop.firstElementChild);
+    const vaultPreferences = getVaultPreferences();
+    if (vaultPreferences.lockOnLogout && activeTab === 'vault') {
+      activeModule?.lock?.();
+    }
+    setAuthenticated(false);
+    syncAuthOverlay();
+    activateTab(null);
+    showToast('You’ve been logged out');
   }
 });
 
@@ -1452,7 +1981,6 @@ document.addEventListener('keydown', (event) => {
   if (event.key === 'Escape') {
     closeHeaderAccountMenu();
     hideBackdrop(backupRestoreBackdrop, backupRestoreBackdrop.firstElementChild);
-    hideBackdrop(logoutBackdrop, logoutBackdrop.firstElementChild);
   }
 });
 
@@ -1490,19 +2018,13 @@ backupRestoreBackdrop.querySelector('#backup-restore-input')?.addEventListener('
   event.target.value = '';
 });
 
-logoutBackdrop.querySelector('#logout-cancel-btn')?.addEventListener('click', () => {
-  hideBackdrop(logoutBackdrop, logoutBackdrop.firstElementChild);
-});
-
-logoutBackdrop.querySelector('#logout-confirm-btn')?.addEventListener('click', () => {
-  hideBackdrop(logoutBackdrop, logoutBackdrop.firstElementChild);
-  activateTab(null);
-});
-
-logoutBackdrop.addEventListener('click', (event) => {
-  if (event.target === logoutBackdrop) {
-    hideBackdrop(logoutBackdrop, logoutBackdrop.firstElementChild);
-  }
+authOverlay.querySelector('#auth-signin-form')?.addEventListener('submit', (event) => {
+  event.preventDefault();
+  const email = authOverlay.querySelector('#auth-email')?.value.trim();
+  const password = authOverlay.querySelector('#auth-password')?.value.trim();
+  if (!email || !password) return;
+  setAuthenticated(true);
+  syncAuthOverlay();
 });
 
 // Initial Lucide setup

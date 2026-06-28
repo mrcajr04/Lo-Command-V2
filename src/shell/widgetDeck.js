@@ -4,6 +4,7 @@
  */
 
 const faviconCache = new Map();
+const UNASSIGNED_LINK_CATEGORY = 'unassigned';
 
 function getFaviconCandidates(url, altFaviconDomain = '') {
   function fromDomain(value) {
@@ -326,7 +327,7 @@ export function createWidgetDeck() {
     try {
       const saved = localStorage.getItem(LINKS_KEY);
       const parsed = saved ? JSON.parse(saved) : [];
-      return Array.isArray(parsed) ? parsed.filter(link => link.bookmarked) : [];
+      return Array.isArray(parsed) ? parsed.filter(link => link.bookmarked && link.category !== UNASSIGNED_LINK_CATEGORY) : [];
     } catch {
       return [];
     }
@@ -336,7 +337,7 @@ export function createWidgetDeck() {
     try {
       const saved = localStorage.getItem(LINKS_KEY);
       const parsed = saved ? JSON.parse(saved) : [];
-      return Array.isArray(parsed) ? parsed : [];
+      return Array.isArray(parsed) ? parsed.filter(link => link.category !== UNASSIGNED_LINK_CATEGORY) : [];
     } catch {
       return [];
     }
@@ -564,13 +565,12 @@ export function createWidgetDeck() {
   aside.innerHTML = `
     <!-- Right Pane Controls Header -->
     <div class="px-4 py-3.5 border-b border-white/6 flex items-center justify-between z-10 select-none flex-shrink-0">
-        <div class="flex flex-col">
-            <span class="text-[0.6rem] font-bold text-softBlue2 uppercase tracking-[0.2em] opacity-70">Utility Deck</span>
-            <span class="mt-0.5 text-[0.85rem] font-semibold tracking-[-0.02em] text-white">Interactive Utility Deck</span>
+        <div class="flex min-w-0 flex-1 justify-start">
+            <span class="text-[0.72rem] font-bold text-softBlue2 uppercase tracking-[0.2em] opacity-80">Utility Deck</span>
         </div>
 
         <!-- Add Button and Dropdown Anchor -->
-        <div class="relative">
+        <div class="relative flex-shrink-0">
             <button id="add-widget-btn" class="inline-flex h-8 items-center gap-1.5 rounded-lg border border-[#314c72] bg-white/[0.05] px-3 text-xs font-semibold text-white shadow-[inset_0_1px_0_rgba(255,255,255,0.05)] transition hover:border-[#4a698f] hover:bg-white/[0.08] focus:outline-none" title="Add Widget">
                 <i class="fa-solid fa-plus text-[11px]"></i>
                 <span>Add Widget</span>
