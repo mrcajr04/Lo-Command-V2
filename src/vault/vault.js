@@ -3,7 +3,7 @@
  * PIN-locked credential manager with AES-GCM local encryption.
  */
 import { deriveKey, encryptData, decryptData, generateSalt } from './crypto.js';
-import { hasVaultData, getVaultSalt, getVaultIv, getVaultCiphertext, saveVaultData } from './storage.js';
+import { hasVaultData, getVaultSalt, getVaultIv, getVaultCiphertext, saveVaultData, getVaultPreferences } from './storage.js';
 
 // Default mock data to initialize on first run
 const DEFAULT_CREDENTIALS = [
@@ -55,7 +55,8 @@ export function createVaultModule() {
   let expandedItems = new Set(); // Tracks expanded details tray IDs
   let derivedKey = null; // In-memory cryptographic key (never stored)
   let isProcessing = false; // Prevents double submission during crypto actions
-  const AUTO_LOCK_MS = 5 * 60 * 1000;
+  const vaultPreferences = getVaultPreferences();
+  const AUTO_LOCK_MS = (Number(vaultPreferences.autoLockMinutes) || 5) * 60 * 1000;
   let autoLockDeadline = null;
   let autoLockIntervalId = null;
 
@@ -1073,6 +1074,7 @@ export function createVaultModule() {
   return {
     element: container,
     isUnlocked: () => !isLocked,
+    lock: () => lockVault(),
     destroy: () => {
       stopAutoLockTimer();
       container.removeEventListener('pointerdown', handleVaultActivity);

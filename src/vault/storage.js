@@ -3,6 +3,12 @@
  * Stores and loads base64-encoded encrypted data and cryptographic parameters.
  */
 
+const VAULT_PREFERENCES_KEY = 'lo_command_vault_preferences';
+const DEFAULT_VAULT_PREFERENCES = {
+  autoLockMinutes: 5,
+  lockOnLogout: true,
+};
+
 // Helper to convert an ArrayBuffer to a Base64 string
 export function arrayBufferToBase64(buffer) {
   const bytes = new Uint8Array(buffer);
@@ -61,4 +67,21 @@ export function clearVaultStorage() {
   localStorage.removeItem('lo_command_vault_salt');
   localStorage.removeItem('lo_command_vault_iv');
   localStorage.removeItem('lo_command_vault_data');
+}
+
+export function getVaultPreferences() {
+  try {
+    const raw = localStorage.getItem(VAULT_PREFERENCES_KEY);
+    if (!raw) return { ...DEFAULT_VAULT_PREFERENCES };
+    return { ...DEFAULT_VAULT_PREFERENCES, ...JSON.parse(raw) };
+  } catch {
+    return { ...DEFAULT_VAULT_PREFERENCES };
+  }
+}
+
+export function saveVaultPreferences(preferences) {
+  localStorage.setItem(
+    VAULT_PREFERENCES_KEY,
+    JSON.stringify({ ...DEFAULT_VAULT_PREFERENCES, ...preferences })
+  );
 }

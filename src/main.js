@@ -519,7 +519,22 @@ function activateTab(tabId) {
 function handleSidebarCollapse(nextCollapsed) {
   sidebarCollapsed = Boolean(nextCollapsed);
   setItem('lo_command_sidebar_collapsed', sidebarCollapsed);
-  activateTab(activeTab);
+
+  // Rebuild only the sidebar — do NOT re-render the canvas. Re-rendering would
+  // remount the active module (e.g. a fresh, locked vault), kicking the user out.
+  const newSidebar = createSidebar(activeTab, handleTabChange, {
+    collapsed: sidebarCollapsed,
+    onToggleCollapse: handleSidebarCollapse,
+  });
+  if (sidebar?.classList.contains('hidden')) newSidebar.classList.add('hidden');
+  if (sidebar) {
+    workspace.replaceChild(newSidebar, sidebar);
+  }
+  sidebar = newSidebar;
+
+  if (window.lucide) {
+    window.lucide.createIcons();
+  }
 }
 
 // Tab Change Handler
@@ -865,6 +880,105 @@ function getSettingsContentMarkup() {
   `;
 }
 
+// Pointer-based drag-to-reorder, mirroring the utility deck's widget reorder:
+// 6px drag threshold, a dashed placeholder, the dragged row goes position:fixed and
+// follows the pointer, and insertion is decided by sibling midpoints. Delegated on the
+// container so it survives innerHTML re-renders. onDrop receives the new key order.
+function makeListSortable(containerEl, itemSelector, handleSelector, getKey, onDrop) {
+  if (!containerEl) return;
+  containerEl.addEventListener('pointerdown', (event) => {
+    if (event.button !== 0) return;
+    const handle = event.target.closest(handleSelector);
+    if (!handle || !containerEl.contains(handle)) return;
+    const slot = handle.closest(itemSelector);
+    if (!slot) return;
+
+    const startRect = slot.getBoundingClientRect();
+    const startX = event.clientX;
+    const startY = event.clientY;
+    const pointerOffsetY = event.clientY - startRect.top;
+    let dragging = false;
+    let placeholder = null;
+
+    const startDrag = () => {
+      dragging = true;
+      placeholder = document.createElement('div');
+      placeholder.className = 'rounded-2xl border-2 border-dashed border-steel/40 bg-softBlue1';
+      placeholder.style.height = `${startRect.height}px`;
+      placeholder.style.flexShrink = '0';
+      containerEl.insertBefore(placeholder, slot);
+      // Float on document.body — not the container — so a transformed/overflow-hidden
+      // ancestor (e.g. the categories modal panel) can't reposition or clip the fixed slot.
+      document.body.appendChild(slot);
+
+      slot.style.position = 'fixed';
+      slot.style.left = `${startRect.left}px`;
+      slot.style.top = `${startRect.top}px`;
+      slot.style.width = `${startRect.width}px`;
+      slot.style.height = `${startRect.height}px`;
+      slot.style.zIndex = '70';
+      slot.style.pointerEvents = 'none';
+      slot.style.transform = 'scale(1.02)';
+      slot.style.opacity = '0.96';
+      slot.style.boxShadow = '0 20px 40px rgba(15, 23, 42, 0.18)';
+      document.body.style.userSelect = 'none';
+      document.body.style.cursor = 'grabbing';
+    };
+
+    const movePlaceholder = (clientY) => {
+      const siblings = [...containerEl.querySelectorAll(itemSelector)].filter((item) => item !== slot);
+      let inserted = false;
+      for (const sibling of siblings) {
+        const rect = sibling.getBoundingClientRect();
+        if (clientY < rect.top + rect.height / 2) {
+          containerEl.insertBefore(placeholder, sibling);
+          inserted = true;
+          break;
+        }
+      }
+      if (!inserted) containerEl.appendChild(placeholder);
+    };
+
+    const onMove = (ev) => {
+      if (!dragging) {
+        if (Math.max(Math.abs(ev.clientX - startX), Math.abs(ev.clientY - startY)) < 6) return;
+        startDrag();
+      }
+      slot.style.top = `${ev.clientY - pointerOffsetY}px`;
+      movePlaceholder(ev.clientY);
+    };
+
+    const finish = () => {
+      window.removeEventListener('pointermove', onMove);
+      window.removeEventListener('pointerup', finish);
+      window.removeEventListener('pointercancel', finish);
+      if (!dragging) return;
+
+      containerEl.insertBefore(slot, placeholder);
+      placeholder.remove();
+      slot.style.position = '';
+      slot.style.left = '';
+      slot.style.top = '';
+      slot.style.width = '';
+      slot.style.height = '';
+      slot.style.zIndex = '';
+      slot.style.pointerEvents = '';
+      slot.style.transform = '';
+      slot.style.opacity = '';
+      slot.style.boxShadow = '';
+      document.body.style.userSelect = '';
+      document.body.style.cursor = '';
+
+      const order = [...containerEl.querySelectorAll(itemSelector)].map(getKey);
+      onDrop(order);
+    };
+
+    window.addEventListener('pointermove', onMove);
+    window.addEventListener('pointerup', finish);
+    window.addEventListener('pointercancel', finish);
+  });
+}
+
 function setupLinksManager() {
   const searchEl = canvas.querySelector('#settings-links-search');
   const listEl = canvas.querySelector('#settings-links-list');
@@ -930,14 +1044,32 @@ function setupLinksManager() {
 
     categoriesEl.innerHTML = pills.map((pill) => {
       const active = pill.key === activeLinksCategory;
+      const isUnassigned = isUnassignedLinkCategory(pill.key);
+      const base = 'inline-flex items-center gap-2 rounded-full px-4 py-2 text-sm font-semibold transition';
+      let btnCls;
+      let countCls;
+      if (isUnassigned) {
+        // Soft amber warning chip — subtle so it flags action without overpowering the row
+        btnCls = active
+          ? `${base} bg-amber text-white shadow-sm`
+          : `${base} bg-amber/10 text-amber border border-amber/30 hover:bg-amber/15`;
+        countCls = active ? 'bg-white/20 text-white' : 'bg-white text-amber border border-amber/30';
+      } else {
+        btnCls = active
+          ? `${base} bg-navy text-white shadow-sm`
+          : `${base} bg-[#f3f6fb] text-steel hover:bg-softBlue1`;
+        countCls = active ? 'bg-white/12 text-white' : 'bg-white text-steel border border-softBlue2';
+      }
+      const alertIcon = isUnassigned ? '<i class="fa-solid fa-triangle-exclamation text-[11px]"></i>' : '';
       return `
         <button
           type="button"
           data-link-category="${pill.key}"
-          class="inline-flex items-center gap-2 rounded-full px-4 py-2 text-sm font-semibold transition ${active ? 'bg-navy text-white shadow-sm' : 'bg-[#f3f6fb] text-steel hover:bg-softBlue1'}"
+          class="${btnCls}"
         >
+          ${alertIcon}
           <span>${pill.label}</span>
-          <span class="inline-flex h-5 min-w-5 items-center justify-center rounded-full px-1.5 text-[11px] ${active ? 'bg-white/12 text-white' : 'bg-white text-steel border border-softBlue2'}">${pill.count}</span>
+          <span class="inline-flex h-5 min-w-5 items-center justify-center rounded-full px-1.5 text-[11px] ${countCls}">${pill.count}</span>
         </button>
       `;
     }).join('');
@@ -947,8 +1079,8 @@ function setupLinksManager() {
     const assignableCategories = getAssignableLinkCategories();
     const links = getVisibleLinks();
     listEl.innerHTML = links.map((link) => `
-      <div class="flex items-center gap-4 rounded-2xl border border-softBlue2 bg-white px-4 py-3 shadow-sm">
-        <div class="text-slate-300 text-sm">
+      <div class="settings-link-row flex items-center gap-4 rounded-2xl border border-softBlue2 bg-white px-4 py-3 shadow-sm" data-link-id="${escapeHTML(link.id)}">
+        <div data-link-drag-handle class="text-slate-300 text-sm cursor-grab active:cursor-grabbing hover:text-steel select-none touch-none" title="Drag to reorder">
           <i class="fa-solid fa-grip-lines"></i>
         </div>
         <button type="button" data-toggle-bookmark="${link.id}" class="flex h-8 w-8 items-center justify-center rounded-full border transition ${link.bookmarked ? 'border-gold/40 bg-gold/10 text-gold' : 'border-softBlue2 bg-white text-slate-400 hover:bg-softBlue1 hover:text-steel'}">
@@ -1048,8 +1180,11 @@ function setupLinksManager() {
       const isDeletePending = pendingDeleteCategoryKey === category.key;
 
       return `
-        <div class="rounded-[1.35rem] border border-softBlue2 bg-[#f8fbff] p-4">
+        <div class="settings-category-row rounded-[1.35rem] border border-softBlue2 bg-[#f8fbff] p-4" data-category-key="${escapeHTML(category.key)}">
           <div class="flex flex-col gap-3 lg:flex-row lg:items-center">
+            <div data-category-drag-handle class="cursor-grab active:cursor-grabbing text-slate-300 hover:text-steel select-none touch-none self-start lg:self-center" title="Drag to reorder">
+              <i class="fa-solid fa-grip-vertical"></i>
+            </div>
             <div class="flex-1">
               <label class="block text-[11px] font-bold uppercase tracking-[0.18em] text-steel">Category Name</label>
               <input
@@ -1181,13 +1316,40 @@ function setupLinksManager() {
     const nextCategory = categorySelect.value;
     const nextLinks = loadWorkspaceLinks().map((link) => link.id === linkId ? { ...link, category: nextCategory } : link);
     saveWorkspaceLinks(nextLinks);
-    if (activeLinksCategory !== 'all' && activeLinksCategory !== nextCategory && isUnassignedLinkCategory(activeLinksCategory)) {
-      activeLinksCategory = 'all';
-    }
+    // Stay on the current filter (e.g. Unassigned) while it still has links;
+    // syncCategories() falls back to All only when the active category disappears.
     syncCategories();
     renderCategoriesManager();
     window.dispatchEvent(new CustomEvent('workspace-links-updated'));
   });
+
+  // Apply the new visible order back onto the full link list, leaving links that are
+  // hidden by the active filter in their original slots.
+  function persistLinkOrder(newVisibleIds) {
+    const full = loadWorkspaceLinks();
+    const visible = new Set(newVisibleIds);
+    const reordered = newVisibleIds.map((id) => full.find((link) => link.id === id)).filter(Boolean);
+    let next = 0;
+    const result = full.map((link) => (visible.has(link.id) ? reordered[next++] : link));
+    saveWorkspaceLinks(result);
+    renderList();
+    renderCategoryPills();
+    window.dispatchEvent(new CustomEvent('workspace-links-updated'));
+  }
+
+  function persistCategoryOrder(newKeys) {
+    const byKey = new Map(loadLinkCategories().map((category) => [category.key, category]));
+    const reordered = newKeys.map((key) => byKey.get(key)).filter(Boolean);
+    loadLinkCategories().forEach((category) => {
+      if (!newKeys.includes(category.key)) reordered.push(category);
+    });
+    saveLinkCategories(reordered);
+    syncCategories();
+    renderCategoriesManager();
+  }
+
+  makeListSortable(listEl, '.settings-link-row', '[data-link-drag-handle]', (el) => el.dataset.linkId, persistLinkOrder);
+  makeListSortable(categoriesListEl, '.settings-category-row', '[data-category-drag-handle]', (el) => el.dataset.categoryKey, persistCategoryOrder);
 
   categoriesListEl?.addEventListener('click', (event) => {
     const saveBtn = event.target.closest('[data-category-save]');
