@@ -316,12 +316,6 @@ export function createWidgetDeck() {
   }
   
   // State: Checklist elements
-  let tasksData = [
-    { id: 1, text: 'Verify income for Patterson loan', completed: false },
-    { id: 2, text: 'Review unit 4B title commitment', completed: false },
-    { id: 3, text: 'Approve rate lock extension request', completed: false },
-    { id: 4, text: 'Dispatch disclosure packet - #903', completed: false }
-  ];
   let stickyNoteDraft = '';
 
   function normalizeUrl(value) {
@@ -456,29 +450,6 @@ export function createWidgetDeck() {
         return `<div class="py-1.5">${sections.join('')}</div>`;
       }
     },
-    tasks: {
-      id: 'tasks',
-      title: 'Due Today (Pending Tasks)',
-      iconClass: 'fa-solid fa-square-check text-gold text-xs mr-1.5',
-      render: () => {
-        return `
-          <div class="space-y-1.5 py-1 text-[11px] text-slate-300">
-            ${tasksData.map(task => `
-              <div data-task-id="${task.id}" class="task-item flex items-start gap-2 py-1.5 border-b border-steel/15 cursor-pointer select-none transition ${task.completed ? 'opacity-40 line-through' : ''}">
-                <div class="h-3.5 w-3.5 rounded border mt-0.5 flex items-center justify-center flex-shrink-0 transition ${task.completed ? 'bg-green border-green text-white' : 'bg-navy border-steel hover:border-gold'}">
-                  ${task.completed ? '<i class="fa-solid fa-check text-[8px] stroke-[3]"></i>' : ''}
-                </div>
-                <div class="flex-1 min-w-0">
-                  <p class="text-[11px] leading-tight text-slate-200 font-medium ${task.completed ? 'text-slate-500' : ''}">
-                    ${task.text}
-                  </p>
-                </div>
-              </div>
-            `).join('')}
-          </div>
-        `;
-      }
-    },
     stickyNote: {
       id: 'stickyNote',
       title: 'Quick Sticky Note',
@@ -542,32 +513,6 @@ export function createWidgetDeck() {
         `;
       }
     },
-    rates: {
-      id: 'rates',
-      title: 'Market Interest Rates',
-      iconClass: 'fa-solid fa-chart-line text-gold text-xs mr-1.5',
-      render: () => {
-        const rates = [
-          { label: '30-Yr Fixed Gold Pref', val: '6.125%', change: '-0.05%' },
-          { label: '15-Yr Fixed Core Loan', val: '5.375%', change: '0.00%' },
-          { label: '5/1 ARM Premium Jumbo', val: '6.500%', change: '+0.12%' }
-        ];
-
-        return `
-          <div class="space-y-1.5 py-1 text-[11px] text-slate-300">
-            ${rates.map(r => `
-              <div class="flex items-center justify-between py-1 border-b border-steel/15">
-                <span class="font-medium text-slate-300 truncate max-w-[150px]">${r.label}</span>
-                <div class="text-right">
-                  <span class="font-bold text-white font-mono">${r.val}</span>
-                  <span class="text-[9px] font-semibold font-sans ${r.change.startsWith('-') ? 'text-green-400' : r.change.startsWith('+') ? 'text-amber-400' : 'text-slate-400'} ml-1">${r.change}</span>
-                </div>
-              </div>
-            `).join('')}
-          </div>
-        `;
-      }
-    }
   };
 
   // Base shell structure for the widget deck
@@ -698,12 +643,6 @@ export function createWidgetDeck() {
         updateDeck();
       });
 
-      // Bind local task toggle interaction
-      if (widgetId === 'tasks') {
-        const contentArea = element.querySelector('.widget-content');
-        bindTaskListeners(contentArea, def);
-      }
-
       if (widgetId === 'stickyNote') {
         const noteInput = element.querySelector('[data-sticky-note-input]');
         noteInput?.addEventListener('input', (event) => {
@@ -738,22 +677,6 @@ export function createWidgetDeck() {
     });
 
     refreshResponsiveWidgets();
-
-    // Helper to bind task check-offs and redraw the list inside tasks widget
-    function bindTaskListeners(contentArea, def) {
-      const taskItems = contentArea.querySelectorAll('.task-item');
-      taskItems.forEach(item => {
-        item.addEventListener('click', () => {
-          const taskId = parseInt(item.getAttribute('data-task-id'));
-          const task = tasksData.find(t => t.id === taskId);
-          if (task) {
-            task.completed = !task.completed;
-          }
-          contentArea.innerHTML = def.render();
-          bindTaskListeners(contentArea, def);
-        });
-      });
-    }
 
     // 4. Update Dropdown Option Listings dynamically
     const available = Object.keys(widgetDefinitions).filter(id => !activeWidgets.includes(id));
