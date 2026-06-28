@@ -916,7 +916,7 @@ function makeListSortable(containerEl, itemSelector, handleSelector, getKey, onD
       slot.style.top = `${startRect.top}px`;
       slot.style.width = `${startRect.width}px`;
       slot.style.height = `${startRect.height}px`;
-      slot.style.zIndex = '70';
+      slot.style.zIndex = '150';
       slot.style.pointerEvents = 'none';
       slot.style.transform = 'scale(1.02)';
       slot.style.opacity = '0.96';
