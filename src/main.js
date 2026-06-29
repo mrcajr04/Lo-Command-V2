@@ -426,7 +426,7 @@ logoutBackdrop.innerHTML = `
         <i class="fa-solid fa-arrow-right-from-bracket text-lg"></i>
       </div>
       <h3 class="mt-5 text-[1.8rem] font-black tracking-tight text-navy">Logout</h3>
-      <p class="mt-3 text-sm leading-6 text-steel">You’ll exit the current workspace view and return to the main hub. Your saved data will stay intact.</p>
+      <p class="mt-3 text-sm leading-6 text-steel">You'll exit the current workspace view and return to the main hub. Your saved data will stay intact.</p>
       <div class="mt-7 flex items-center justify-center gap-3">
         <button type="button" id="logout-cancel-btn" class="inline-flex min-w-[110px] items-center justify-center rounded-2xl border border-softBlue2 px-4 py-2.5 text-sm font-bold text-navy transition hover:bg-softBlue1">
           Cancel
@@ -2067,16 +2067,16 @@ headerAccountMenu?.addEventListener('click', (event) => {
   if (action === 'backup-restore') {
     showBackdrop(backupRestoreBackdrop, backupRestoreBackdrop.firstElementChild);
   }
-  if (action === ‘logout’) {
+  if (action === 'logout') {
     const vaultPreferences = getVaultPreferences();
-    if (vaultPreferences.lockOnLogout && activeTab === ‘vault’) {
+    if (vaultPreferences.lockOnLogout && activeTab === 'vault') {
       activeModule?.lock?.();
     }
     supabase.auth.signOut();
     setAuthenticated(false);
     syncAuthOverlay();
     activateTab(null);
-    showToast("You’ve been logged out");
+    showToast("You've been logged out");
   }
 });
 
