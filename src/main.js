@@ -676,19 +676,35 @@ function getSettingsContentMarkup() {
               <span class="text-[11px] font-bold uppercase tracking-[0.18em]">Vault PIN</span>
             </div>
             <form id="settings-security-pin-form" class="mt-5 space-y-4">
-              <label class="block">
+              <div>
                 <span class="mb-2 block text-[11px] font-bold uppercase tracking-[0.18em] text-steel">Current 4-digit PIN</span>
-                <input id="settings-pin-current" type="password" inputmode="numeric" maxlength="4" pattern="[0-9]{4}" required placeholder="Enter current PIN" class="w-full rounded-2xl border border-softBlue2 bg-[#f6f9fd] px-4 py-3 text-center text-sm font-semibold tracking-[0.35em] text-navy placeholder-slate-400 focus:outline-none focus:border-steel">
-              </label>
+                <div class="relative">
+                  <input id="settings-pin-current" type="password" inputmode="numeric" maxlength="4" pattern="[0-9]{4}" required placeholder="Enter current PIN" class="w-full rounded-2xl border border-softBlue2 bg-[#f6f9fd] px-4 pr-11 py-3 text-center text-sm font-semibold tracking-[0.35em] text-navy placeholder-slate-400 focus:outline-none focus:border-steel">
+                  <button type="button" data-eye="settings-pin-current" class="sec-eye-btn absolute right-3.5 top-1/2 -translate-y-1/2 text-slate-400 hover:text-navy transition-colors focus:outline-none">
+                    <i class="fa-regular fa-eye text-sm"></i>
+                  </button>
+                </div>
+              </div>
               <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
-                <label class="block">
+                <div>
                   <span class="mb-2 block text-[11px] font-bold uppercase tracking-[0.18em] text-steel">New 4-digit PIN</span>
-                  <input id="settings-pin-new" type="password" inputmode="numeric" maxlength="4" pattern="[0-9]{4}" required placeholder="New PIN" class="w-full rounded-2xl border border-softBlue2 bg-[#f6f9fd] px-4 py-3 text-center text-sm font-semibold tracking-[0.35em] text-navy placeholder-slate-400 focus:outline-none focus:border-steel">
-                </label>
-                <label class="block">
+                  <div class="relative">
+                    <input id="settings-pin-new" type="password" inputmode="numeric" maxlength="4" pattern="[0-9]{4}" required placeholder="New PIN" class="w-full rounded-2xl border border-softBlue2 bg-[#f6f9fd] px-4 pr-11 py-3 text-center text-sm font-semibold tracking-[0.35em] text-navy placeholder-slate-400 focus:outline-none focus:border-steel">
+                    <button type="button" data-eye="settings-pin-new" class="sec-eye-btn absolute right-3.5 top-1/2 -translate-y-1/2 text-slate-400 hover:text-navy transition-colors focus:outline-none">
+                      <i class="fa-regular fa-eye text-sm"></i>
+                    </button>
+                  </div>
+                </div>
+                <div>
                   <span class="mb-2 block text-[11px] font-bold uppercase tracking-[0.18em] text-steel">Confirm New PIN</span>
-                  <input id="settings-pin-confirm" type="password" inputmode="numeric" maxlength="4" pattern="[0-9]{4}" required placeholder="Confirm PIN" class="w-full rounded-2xl border border-softBlue2 bg-[#f6f9fd] px-4 py-3 text-center text-sm font-semibold tracking-[0.35em] text-navy placeholder-slate-400 focus:outline-none focus:border-steel">
-                </label>
+                  <div class="relative">
+                    <input id="settings-pin-confirm" type="password" inputmode="numeric" maxlength="4" pattern="[0-9]{4}" required placeholder="Confirm PIN" class="w-full rounded-2xl border border-softBlue2 bg-[#f6f9fd] px-4 pr-11 py-3 text-center text-sm font-semibold tracking-[0.35em] text-navy placeholder-slate-400 focus:outline-none focus:border-steel">
+                    <button type="button" data-eye="settings-pin-confirm" class="sec-eye-btn absolute right-3.5 top-1/2 -translate-y-1/2 text-slate-400 hover:text-navy transition-colors focus:outline-none">
+                      <i class="fa-regular fa-eye text-sm"></i>
+                    </button>
+                  </div>
+                  <p id="settings-pin-match-msg" class="hidden mt-1.5 text-[11px] font-semibold"></p>
+                </div>
               </div>
               <div class="flex justify-center">
                 <button type="submit" class="inline-flex items-center gap-2 rounded-2xl bg-navy px-5 py-3 text-sm font-bold text-white hover:bg-steel transition">
@@ -1614,6 +1630,38 @@ function setupSecuritySettings() {
 
   pinForm?.addEventListener('submit', updatePin);
   saveSecurityBtn?.addEventListener('click', saveSecurityPreferences);
+
+  // Eye toggle
+  pinForm?.querySelectorAll('.sec-eye-btn').forEach(btn => {
+    btn.addEventListener('click', () => {
+      const input = canvas.querySelector(`#${btn.getAttribute('data-eye')}`);
+      const icon = btn.querySelector('i');
+      if (input.type === 'password') {
+        input.type = 'text';
+        icon.className = 'fa-regular fa-eye-slash text-sm';
+      } else {
+        input.type = 'password';
+        icon.className = 'fa-regular fa-eye text-sm';
+      }
+    });
+  });
+
+  // Real-time PIN match validation
+  const matchMsg = canvas.querySelector('#settings-pin-match-msg');
+  function checkMatch() {
+    const newVal = newPinEl?.value || '';
+    const confirmVal = confirmPinEl?.value || '';
+    if (!confirmVal) { matchMsg?.classList.add('hidden'); return; }
+    if (newVal === confirmVal) {
+      matchMsg.textContent = 'PINs match';
+      matchMsg.className = 'mt-1.5 text-[11px] font-semibold text-green-600';
+    } else {
+      matchMsg.textContent = 'PINs do not match';
+      matchMsg.className = 'mt-1.5 text-[11px] font-semibold text-red-500';
+    }
+  }
+  newPinEl?.addEventListener('input', checkMatch);
+  confirmPinEl?.addEventListener('input', checkMatch);
 }
 
 // Canvas Content Renderer
