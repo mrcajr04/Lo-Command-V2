@@ -8,6 +8,7 @@ import { hasVaultData, getVaultSalt, getVaultIv, getVaultCiphertext, saveVaultDa
 import { createContactsModule } from './contacts/contacts.js';
 import { initializeIfEmpty, loadContacts, saveContacts, exportToJSON, importFromJSON, migrateContacts } from './contacts/storage.js';
 import { getItem, setItem } from './shared/storage.js';
+import { supabase } from './lib/supabase.js';
 
 // Favicon URL cache — keyed by link ID, stores the first candidate URL that loaded successfully
 const faviconCache = new Map();
@@ -2034,7 +2035,15 @@ workspace.appendChild(widgetDeck);
 
 app.appendChild(header);
 app.appendChild(workspace);
-syncAuthOverlay();
+
+// Check for an existing Supabase session on load
+(async () => {
+  const { data: { session } } = await supabase.auth.getSession();
+  if (session?.access_token) {
+    setAuthenticated(session.access_token);
+  }
+  syncAuthOverlay();
+})();
 
 headerSettingsBtn?.addEventListener('click', () => activateTab('settings'));
 headerAccountTrigger?.addEventListener('click', (event) => {
@@ -2050,15 +2059,16 @@ headerAccountMenu?.addEventListener('click', (event) => {
   if (action === 'backup-restore') {
     showBackdrop(backupRestoreBackdrop, backupRestoreBackdrop.firstElementChild);
   }
-  if (action === 'logout') {
+  if (action === ‘logout’) {
     const vaultPreferences = getVaultPreferences();
-    if (vaultPreferences.lockOnLogout && activeTab === 'vault') {
+    if (vaultPreferences.lockOnLogout && activeTab === ‘vault’) {
       activeModule?.lock?.();
     }
+    supabase.auth.signOut();
     setAuthenticated(false);
     syncAuthOverlay();
     activateTab(null);
-    showToast('You’ve been logged out');
+    showToast(‘You’ve been logged out’);
   }
 });
 
@@ -2196,18 +2206,13 @@ authOverlay.querySelector('#auth-signin-form')?.addEventListener('submit', async
   submitLabel.textContent = 'Signing in…';
 
   try {
-    const res = await fetch('/api/auth', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ email, password }),
-    });
-    const data = await res.json();
-    if (data.success && data.token) {
-      setAuthenticated(data.token);
-      syncAuthOverlay();
-    } else {
-      errorEl.textContent = data.error || 'Invalid email or password.';
+    const { data, error } = await supabase.auth.signInWithPassword({ email, password });
+    if (error || !data.session) {
+      errorEl.textContent = error?.message || 'Invalid email or password.';
       errorEl.classList.remove('hidden');
+    } else {
+      setAuthenticated(data.session.access_token);
+      syncAuthOverlay();
     }
   } catch {
     errorEl.textContent = 'Connection error. Please try again.';
