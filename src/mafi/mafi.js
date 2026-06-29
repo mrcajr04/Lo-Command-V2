@@ -2,9 +2,9 @@ export function createMafiModule() {
   const history = [];
 
   const element = document.createElement('div');
-  element.className = 'flex flex-col h-full bg-softBlue1';
+  element.className = 'flex flex-col h-full bg-[#0d1c33]';
   element.innerHTML = `
-    <div class="flex items-center gap-3 px-6 py-4 border-b border-white/8 bg-[linear-gradient(180deg,#13243f_0%,#0d1c33_100%)] shrink-0">
+    <div class="flex items-center gap-3 px-6 py-4 border-b border-white/[0.06] bg-[linear-gradient(180deg,#13243f_0%,#0d1c33_100%)] shrink-0">
       <div class="flex h-10 w-10 items-center justify-center rounded-[0.85rem] border border-gold/60 bg-[radial-gradient(circle_at_30%_28%,#f4d777_0%,#cfa52e_42%,#8f6a14_100%)] text-[0.7rem] font-black text-navy shadow-[inset_0_1px_0_rgba(255,255,255,0.35)]">
         AI
       </div>
@@ -17,22 +17,22 @@ export function createMafiModule() {
       </button>
     </div>
 
-    <div id="mafi-messages" class="flex-1 overflow-y-auto px-5 py-5 space-y-4">
+    <div id="mafi-messages" class="flex-1 overflow-y-auto px-5 py-5 space-y-4 bg-[#0d1c33]">
       <div class="flex gap-3">
         <div class="flex h-7 w-7 shrink-0 items-center justify-center rounded-lg border border-gold/50 bg-[radial-gradient(circle_at_30%_28%,#f4d777_0%,#cfa52e_42%,#8f6a14_100%)] text-[0.55rem] font-black text-navy mt-0.5">AI</div>
-        <div class="max-w-[80%] rounded-2xl rounded-tl-sm bg-[#1a2e4a] border border-white/8 px-4 py-3 text-sm text-slate-200 leading-relaxed">
+        <div class="max-w-[80%] rounded-2xl rounded-tl-sm bg-[#13243f] border border-white/[0.07] px-4 py-3 text-sm text-slate-300 leading-relaxed">
           Hello! I'm MAFI, your mortgage assistant. Ask me anything about loan programs, guidelines, rates, or mortgage processes.
         </div>
       </div>
     </div>
 
-    <div class="shrink-0 border-t border-white/8 bg-[#0d1c33] px-4 py-3">
+    <div class="shrink-0 border-t border-white/[0.06] bg-[#091628] px-4 py-3">
       <form id="mafi-form" class="flex gap-2 items-end">
         <textarea
           id="mafi-input"
           rows="1"
           placeholder="Ask MAFI anything..."
-          class="flex-1 resize-none rounded-2xl border border-[#34527c] bg-white/[0.05] px-4 py-2.5 text-sm text-white placeholder:text-slate-400 focus:outline-none focus:border-[#5476a2] max-h-32 leading-relaxed"
+          class="flex-1 resize-none rounded-2xl border border-[#2a4266] bg-white/[0.04] px-4 py-2.5 text-sm text-white placeholder:text-slate-500 focus:outline-none focus:border-[#4a6a9a] max-h-32 leading-relaxed"
         ></textarea>
         <button
           id="mafi-send-btn"
@@ -56,10 +56,10 @@ export function createMafiModule() {
     const wrapper = document.createElement('div');
     wrapper.className = `flex gap-3 ${isUser ? 'justify-end' : ''}`;
     wrapper.innerHTML = isUser
-      ? `<div class="max-w-[80%] rounded-2xl rounded-tr-sm bg-[#1e4080] border border-[#2e5499] px-4 py-3 text-sm text-white leading-relaxed">${escapeHtml(text)}</div>`
+      ? `<div class="max-w-[80%] rounded-2xl rounded-tr-sm bg-[#1a3a6e] border border-[#2a4f8a] px-4 py-3 text-sm text-white leading-relaxed">${escapeHtml(text)}</div>`
       : `
           <div class="flex h-7 w-7 shrink-0 items-center justify-center rounded-lg border border-gold/50 bg-[radial-gradient(circle_at_30%_28%,#f4d777_0%,#cfa52e_42%,#8f6a14_100%)] text-[0.55rem] font-black text-navy mt-0.5">AI</div>
-          <div class="max-w-[80%] rounded-2xl rounded-tl-sm bg-[#1a2e4a] border border-white/8 px-4 py-3 text-sm text-slate-200 leading-relaxed">${formatResponse(text)}</div>
+          <div class="max-w-[80%] rounded-2xl rounded-tl-sm bg-[#13243f] border border-white/[0.07] px-4 py-3 text-sm text-slate-300 leading-relaxed">${formatResponse(text)}</div>
         `;
     messagesEl.appendChild(wrapper);
     messagesEl.scrollTop = messagesEl.scrollHeight;
@@ -72,11 +72,11 @@ export function createMafiModule() {
     wrapper.className = 'flex gap-3';
     wrapper.innerHTML = `
       <div class="flex h-7 w-7 shrink-0 items-center justify-center rounded-lg border border-gold/50 bg-[radial-gradient(circle_at_30%_28%,#f4d777_0%,#cfa52e_42%,#8f6a14_100%)] text-[0.55rem] font-black text-navy mt-0.5">AI</div>
-      <div class="rounded-2xl rounded-tl-sm bg-[#1a2e4a] border border-white/8 px-4 py-3">
+      <div class="rounded-2xl rounded-tl-sm bg-[#13243f] border border-white/[0.07] px-4 py-3">
         <span class="flex gap-1 items-center h-5">
-          <span class="w-1.5 h-1.5 rounded-full bg-slate-400 animate-bounce" style="animation-delay:0ms"></span>
-          <span class="w-1.5 h-1.5 rounded-full bg-slate-400 animate-bounce" style="animation-delay:150ms"></span>
-          <span class="w-1.5 h-1.5 rounded-full bg-slate-400 animate-bounce" style="animation-delay:300ms"></span>
+          <span class="w-1.5 h-1.5 rounded-full bg-slate-500 animate-bounce" style="animation-delay:0ms"></span>
+          <span class="w-1.5 h-1.5 rounded-full bg-slate-500 animate-bounce" style="animation-delay:150ms"></span>
+          <span class="w-1.5 h-1.5 rounded-full bg-slate-500 animate-bounce" style="animation-delay:300ms"></span>
         </span>
       </div>
     `;
@@ -93,8 +93,23 @@ export function createMafiModule() {
   }
 
   function formatResponse(text) {
-    return escapeHtml(text)
-      .replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>')
+    const escaped = escapeHtml(text);
+    return escaped
+      // headings
+      .replace(/^### (.+)$/gm, '<p class="text-[0.7rem] font-bold uppercase tracking-widest text-softBlue2 mt-3 mb-1">$1</p>')
+      .replace(/^## (.+)$/gm, '<p class="text-base font-bold text-white mt-3 mb-1">$1</p>')
+      .replace(/^# (.+)$/gm, '<p class="text-base font-bold text-white mt-2 mb-1">$1</p>')
+      // bold
+      .replace(/\*\*(.+?)\*\*/g, '<strong class="text-white font-semibold">$1</strong>')
+      // italic
+      .replace(/\*(.+?)\*/g, '<em>$1</em>')
+      // unordered lists — lines starting with - or *
+      .replace(/^[-*] (.+)$/gm, '<li class="ml-4 list-disc text-slate-300">$1</li>')
+      // wrap consecutive <li> blocks in <ul>
+      .replace(/(<li[\s\S]*?<\/li>(\n|<br>)*)+/g, m => `<ul class="my-1 space-y-0.5">${m}</ul>`)
+      // numbered lists
+      .replace(/^\d+\. (.+)$/gm, '<li class="ml-4 list-decimal text-slate-300">$1</li>')
+      // line breaks
       .replace(/\n/g, '<br>');
   }
 
