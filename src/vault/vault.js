@@ -278,16 +278,32 @@ export function createVaultModule() {
             </div>
             <form id="vault-pin-change-form" class="p-4 space-y-3.5">
                 <div>
-                    <label class="block text-[10px] font-bold text-steel uppercase tracking-wider mb-1">Current 4-digit PIN</label>
-                    <input type="password" id="pin-old" maxlength="4" pattern="[0-9]{4}" required placeholder="Type current PIN" class="w-full bg-lightGray border-2 border-softBlue2 rounded-lg px-3 py-1.5 text-xs text-navy tracking-widest text-center focus:border-steel outline-none font-mono">
+                    <label class="block text-[10px] font-bold text-steel uppercase tracking-wider mb-1">Current PIN</label>
+                    <div class="relative">
+                        <input type="password" id="pin-old" maxlength="4" pattern="[0-9]{4}" inputmode="numeric" required placeholder="••••" class="w-full bg-lightGray border-2 border-softBlue2 rounded-lg px-3 pr-9 py-1.5 text-xs text-navy tracking-widest text-center focus:border-steel outline-none font-mono">
+                        <button type="button" data-eye="pin-old" class="pin-eye-btn absolute right-2.5 top-1/2 -translate-y-1/2 text-steel hover:text-navy transition-colors focus:outline-none">
+                            <i class="fa-regular fa-eye text-xs"></i>
+                        </button>
+                    </div>
                 </div>
                 <div>
-                    <label class="block text-[10px] font-bold text-steel uppercase tracking-wider mb-1">New 4-digit PIN</label>
-                    <input type="password" id="pin-new" maxlength="4" pattern="[0-9]{4}" required placeholder="Type new PIN" class="w-full bg-lightGray border-2 border-softBlue2 rounded-lg px-3 py-1.5 text-xs text-navy tracking-widest text-center focus:border-steel outline-none font-mono">
+                    <label class="block text-[10px] font-bold text-steel uppercase tracking-wider mb-1">New PIN</label>
+                    <div class="relative">
+                        <input type="password" id="pin-new" maxlength="4" pattern="[0-9]{4}" inputmode="numeric" required placeholder="••••" class="w-full bg-lightGray border-2 border-softBlue2 rounded-lg px-3 pr-9 py-1.5 text-xs text-navy tracking-widest text-center focus:border-steel outline-none font-mono">
+                        <button type="button" data-eye="pin-new" class="pin-eye-btn absolute right-2.5 top-1/2 -translate-y-1/2 text-steel hover:text-navy transition-colors focus:outline-none">
+                            <i class="fa-regular fa-eye text-xs"></i>
+                        </button>
+                    </div>
                 </div>
                 <div>
-                    <label class="block text-[10px] font-bold text-steel uppercase tracking-wider mb-1">Confirm New 4-digit PIN</label>
-                    <input type="password" id="pin-confirm" maxlength="4" pattern="[0-9]{4}" required placeholder="Confirm new PIN" class="w-full bg-lightGray border-2 border-softBlue2 rounded-lg px-3 py-1.5 text-xs text-navy tracking-widest text-center focus:border-steel outline-none font-mono">
+                    <label class="block text-[10px] font-bold text-steel uppercase tracking-wider mb-1">Confirm New PIN</label>
+                    <div class="relative">
+                        <input type="password" id="pin-confirm" maxlength="4" pattern="[0-9]{4}" inputmode="numeric" required placeholder="••••" class="w-full bg-lightGray border-2 border-softBlue2 rounded-lg px-3 pr-9 py-1.5 text-xs text-navy tracking-widest text-center focus:border-steel outline-none font-mono">
+                        <button type="button" data-eye="pin-confirm" class="pin-eye-btn absolute right-2.5 top-1/2 -translate-y-1/2 text-steel hover:text-navy transition-colors focus:outline-none">
+                            <i class="fa-regular fa-eye text-xs"></i>
+                        </button>
+                    </div>
+                    <p id="pin-match-msg" class="hidden mt-1 text-[10px] font-semibold"></p>
                 </div>
                 <div class="pt-3 border-t border-softBlue2 flex items-center justify-end gap-2 select-none">
                     <button type="button" id="btn-pin-modal-cancel" class="px-3.5 py-1.5 border border-softBlue2 text-steel rounded-lg text-xs hover:text-navy hover:bg-lightGray transition-all focus:outline-none">Cancel</button>
@@ -1010,6 +1026,41 @@ export function createVaultModule() {
   pinModalBackdrop.addEventListener('click', (event) => {
     if (event.target === pinModalBackdrop) closeModal(pinModalBackdrop, pinModalContent);
   });
+
+  // Eye toggle for PIN inputs
+  pinChangeForm.querySelectorAll('.pin-eye-btn').forEach(btn => {
+    btn.addEventListener('click', () => {
+      const inputId = btn.getAttribute('data-eye');
+      const input = pinChangeForm.querySelector(`#${inputId}`);
+      const icon = btn.querySelector('i');
+      if (input.type === 'password') {
+        input.type = 'text';
+        icon.className = 'fa-regular fa-eye-slash text-xs';
+      } else {
+        input.type = 'password';
+        icon.className = 'fa-regular fa-eye text-xs';
+      }
+    });
+  });
+
+  // Real-time PIN match validation
+  const pinNewInput = pinChangeForm.querySelector('#pin-new');
+  const pinConfirmInput = pinChangeForm.querySelector('#pin-confirm');
+  const pinMatchMsg = pinChangeForm.querySelector('#pin-match-msg');
+  function checkPinMatch() {
+    const newVal = pinNewInput.value;
+    const confirmVal = pinConfirmInput.value;
+    if (!confirmVal) { pinMatchMsg.classList.add('hidden'); return; }
+    if (newVal === confirmVal) {
+      pinMatchMsg.textContent = 'PINs match';
+      pinMatchMsg.className = 'mt-1 text-[10px] font-semibold text-green-600';
+    } else {
+      pinMatchMsg.textContent = 'PINs do not match';
+      pinMatchMsg.className = 'mt-1 text-[10px] font-semibold text-red-500';
+    }
+  }
+  pinNewInput.addEventListener('input', checkPinMatch);
+  pinConfirmInput.addEventListener('input', checkPinMatch);
 
   container.addEventListener('pointerdown', handleVaultActivity);
   container.addEventListener('keydown', handleVaultActivity, true);
