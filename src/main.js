@@ -2068,7 +2068,7 @@ headerAccountMenu?.addEventListener('click', (event) => {
     setAuthenticated(false);
     syncAuthOverlay();
     activateTab(null);
-    showToast(‘You’ve been logged out’);
+    showToast("You’ve been logged out");
   }
 });
 
