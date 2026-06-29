@@ -27,15 +27,29 @@ export async function syncFromCloud() {
 
   if (error) { console.error('syncFromCloud error:', error); return; }
 
+  const foundKeys = new Set(data.map(r => r.key));
+
   for (const row of data) {
     if (row.key === 'lo_command_vault') {
-      // Vault is stored as { salt, iv, data } — restore as separate localStorage keys
       const v = row.value;
       if (v?.salt) localStorage.setItem('lo_command_vault_salt', v.salt);
       if (v?.iv) localStorage.setItem('lo_command_vault_iv', v.iv);
       if (v?.data) localStorage.setItem('lo_command_vault_data', v.data);
     } else {
       localStorage.setItem(row.key, JSON.stringify(row.value));
+    }
+  }
+
+  // For new users with no cloud data, write empty arrays so the app
+  // doesn't seed them with the default sample contacts and links.
+  const pristineDefaults = {
+    'lo_command_contacts': [],
+    'lo_command_workspace_links': [],
+    'lo_command_workspace_link_categories': [],
+  };
+  for (const [key, empty] of Object.entries(pristineDefaults)) {
+    if (!foundKeys.has(key)) {
+      localStorage.setItem(key, JSON.stringify(empty));
     }
   }
 }
