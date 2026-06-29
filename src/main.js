@@ -9,6 +9,7 @@ import { createContactsModule } from './contacts/contacts.js';
 import { initializeIfEmpty, loadContacts, saveContacts, exportToJSON, importFromJSON, migrateContacts } from './contacts/storage.js';
 import { getItem, setItem } from './shared/storage.js';
 import { supabase } from './lib/supabase.js';
+import { syncFromCloud, syncToCloud } from './lib/userDataSync.js';
 
 // Favicon URL cache — keyed by link ID, stores the first candidate URL that loaded successfully
 const faviconCache = new Map();
@@ -102,6 +103,7 @@ function loadWorkspaceLinks() {
 
 function saveWorkspaceLinks(links) {
   setItem(WORKSPACE_LINKS_KEY, links);
+  syncToCloud(WORKSPACE_LINKS_KEY, links);
 }
 
 function slugifyCategoryKey(value) {
@@ -141,6 +143,7 @@ function getAssignableLinkCategories() {
 
 function saveLinkCategories(categories) {
   setItem(WORKSPACE_LINK_CATEGORIES_KEY, categories);
+  syncToCloud(WORKSPACE_LINK_CATEGORIES_KEY, categories);
 }
 
 function loadWorkspaceProfile() {
@@ -2036,11 +2039,16 @@ workspace.appendChild(widgetDeck);
 app.appendChild(header);
 app.appendChild(workspace);
 
-// Check for an existing Supabase session on load
+// Check for an existing Supabase session on load, pull cloud data if signed in
 (async () => {
   const { data: { session } } = await supabase.auth.getSession();
   if (session?.access_token) {
     setAuthenticated(session.access_token);
+    await syncFromCloud([
+      'lo_command_contacts',
+      'lo_command_workspace_links',
+      'lo_command_workspace_link_categories',
+    ]);
   }
   syncAuthOverlay();
 })();
@@ -2212,6 +2220,11 @@ authOverlay.querySelector('#auth-signin-form')?.addEventListener('submit', async
       errorEl.classList.remove('hidden');
     } else {
       setAuthenticated(data.session.access_token);
+      await syncFromCloud([
+        'lo_command_contacts',
+        'lo_command_workspace_links',
+        'lo_command_workspace_link_categories',
+      ]);
       syncAuthOverlay();
     }
   } catch {

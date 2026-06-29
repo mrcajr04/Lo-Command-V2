@@ -1,4 +1,5 @@
 import { getItem, setItem } from '../shared/storage.js';
+import { syncToCloud } from '../lib/userDataSync.js';
 
 const CONTACTS_KEY = 'lo_command_contacts';
 
@@ -110,6 +111,7 @@ export function loadContacts() {
 
 export function saveContacts(contacts) {
   setItem(CONTACTS_KEY, contacts);
+  syncToCloud(CONTACTS_KEY, contacts);
   if (typeof window !== 'undefined') {
     window.dispatchEvent(new CustomEvent('contacts-updated'));
   }
