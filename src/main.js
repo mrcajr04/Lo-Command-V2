@@ -442,7 +442,7 @@ logoutBackdrop.innerHTML = `
 `;
 
 const authOverlay = document.createElement('div');
-authOverlay.className = 'fixed inset-0 z-[130] flex items-center justify-center bg-[radial-gradient(circle_at_top,#203f6d_0%,#13243f_42%,#0b1628_100%)] p-6';
+authOverlay.className = 'fixed inset-0 z-[130] flex items-center justify-center bg-[radial-gradient(circle_at_top,#203f6d_0%,#13243f_42%,#0b1628_100%)] p-6 hidden';
 authOverlay.innerHTML = `
   <div class="absolute inset-0 bg-[linear-gradient(135deg,rgba(255,255,255,0.05)_0%,rgba(255,255,255,0)_35%)]"></div>
   <div class="relative w-full max-w-md overflow-hidden rounded-[2rem] border border-[#314b71] bg-[linear-gradient(180deg,rgba(20,39,67,0.98)_0%,rgba(12,24,42,0.99)_100%)] p-7 text-white shadow-[0_30px_80px_rgba(0,0,0,0.35)]">
