@@ -156,11 +156,16 @@ function saveWorkspaceProfile(profile) {
 }
 
 function isAuthenticated() {
-  return Boolean(getItem(AUTH_SESSION_KEY, false));
+  return Boolean(sessionStorage.getItem(AUTH_SESSION_KEY));
 }
 
-function setAuthenticated(value) {
-  setItem(AUTH_SESSION_KEY, Boolean(value));
+function setAuthenticated(token) {
+  if (token) {
+    sessionStorage.setItem(AUTH_SESSION_KEY, token);
+  } else {
+    sessionStorage.removeItem(AUTH_SESSION_KEY);
+    localStorage.removeItem(AUTH_SESSION_KEY);
+  }
 }
 
 function getInitials(value, fallback = 'M') {
@@ -456,9 +461,10 @@ authOverlay.innerHTML = `
         <span class="mb-2 block text-[11px] font-bold uppercase tracking-[0.18em] text-softBlue2">Password</span>
         <input id="auth-password" type="password" required placeholder="Enter your password" class="w-full rounded-2xl border border-[#34527c] bg-white/[0.05] px-4 py-3 text-sm text-white placeholder:text-slate-400 focus:outline-none focus:border-[#5476a2]">
       </label>
-      <button type="submit" class="inline-flex w-full items-center justify-center gap-2 rounded-2xl bg-gold px-5 py-3 text-sm font-bold text-navy transition hover:bg-[#d9b23f]">
+      <div id="auth-error" class="hidden rounded-xl border border-red-500/30 bg-red-500/10 px-4 py-2.5 text-sm text-red-300"></div>
+      <button id="auth-submit-btn" type="submit" class="inline-flex w-full items-center justify-center gap-2 rounded-2xl bg-gold px-5 py-3 text-sm font-bold text-navy transition hover:bg-[#d9b23f] disabled:opacity-60 disabled:cursor-not-allowed">
         <i class="fa-solid fa-arrow-right-to-bracket text-xs"></i>
-        <span>Sign In</span>
+        <span id="auth-submit-label">Sign In</span>
       </button>
     </form>
 
@@ -2175,13 +2181,41 @@ backupRestoreBackdrop.querySelector('#backup-restore-input')?.addEventListener('
   event.target.value = '';
 });
 
-authOverlay.querySelector('#auth-signin-form')?.addEventListener('submit', (event) => {
+authOverlay.querySelector('#auth-signin-form')?.addEventListener('submit', async (event) => {
   event.preventDefault();
   const email = authOverlay.querySelector('#auth-email')?.value.trim();
   const password = authOverlay.querySelector('#auth-password')?.value.trim();
+  const errorEl = authOverlay.querySelector('#auth-error');
+  const submitBtn = authOverlay.querySelector('#auth-submit-btn');
+  const submitLabel = authOverlay.querySelector('#auth-submit-label');
   if (!email || !password) return;
-  setAuthenticated(true);
-  syncAuthOverlay();
+
+  errorEl.classList.add('hidden');
+  errorEl.textContent = '';
+  submitBtn.disabled = true;
+  submitLabel.textContent = 'Signing in…';
+
+  try {
+    const res = await fetch('/api/auth', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ email, password }),
+    });
+    const data = await res.json();
+    if (data.success && data.token) {
+      setAuthenticated(data.token);
+      syncAuthOverlay();
+    } else {
+      errorEl.textContent = data.error || 'Invalid email or password.';
+      errorEl.classList.remove('hidden');
+    }
+  } catch {
+    errorEl.textContent = 'Connection error. Please try again.';
+    errorEl.classList.remove('hidden');
+  } finally {
+    submitBtn.disabled = false;
+    submitLabel.textContent = 'Sign In';
+  }
 });
 
 // Initial Lucide setup
