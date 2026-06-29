@@ -168,5 +168,5 @@ export function createMafiModule() {
     appendMessage('assistant', 'Conversation cleared. How can I help you?');
   });
 
-  return { element };
+  return { element, destroy() {} };
 }
