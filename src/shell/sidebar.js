@@ -25,7 +25,7 @@ export function createSidebar(activeTab, onTabChange, options = {}) {
 
   const nav = aside.querySelector('#sidebar-nav');
   const tabs = [
-    { id: 'tasks', label: 'Tasks', iconClass: 'fa-solid fa-list-check' },
+    { id: 'mafi', label: 'MAFI', iconClass: 'fa-solid fa-robot' },
     { id: 'contacts', label: 'Contacts', iconClass: 'fa-solid fa-users' },
     { id: 'vault', label: 'Vault', iconClass: 'fa-solid fa-vault' }
   ];

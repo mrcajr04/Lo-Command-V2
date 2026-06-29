@@ -6,6 +6,7 @@ import { createVaultModule } from './vault/vault.js';
 import { deriveKey, encryptData, decryptData, generateSalt } from './vault/crypto.js';
 import { hasVaultData, getVaultSalt, getVaultIv, getVaultCiphertext, saveVaultData, getVaultPreferences, saveVaultPreferences } from './vault/storage.js';
 import { createContactsModule } from './contacts/contacts.js';
+import { createMafiModule } from './mafi/mafi.js';
 import { initializeIfEmpty, loadContacts, saveContacts, exportToJSON, importFromJSON, migrateContacts } from './contacts/storage.js';
 import { getItem, setItem } from './shared/storage.js';
 import { supabase } from './lib/supabase.js';
@@ -1621,6 +1622,18 @@ function renderCanvas() {
   if (activeModule) {
     activeModule.destroy();
     activeModule = null;
+  }
+
+  if (activeTab === 'mafi') {
+    sidebar.classList.remove('hidden');
+    widgetDeck.classList.remove('hidden');
+    canvas.className = 'flex-1 overflow-hidden flex flex-col relative bg-softBlue1';
+    canvas.innerHTML = '';
+    const mafi = createMafiModule();
+    activeModule = mafi;
+    canvas.appendChild(mafi.element);
+    updateGlobalSearchAvailability();
+    return;
   }
 
   // Contacts gets the remaining width — hide only the left nav sidebar
