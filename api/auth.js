@@ -11,16 +11,30 @@ export default function handler(req, res) {
     return res.status(400).json({ success: false, error: 'Email and password are required.' });
   }
 
-  const validEmail = process.env.ADMIN_EMAIL;
-  const validPassword = process.env.ADMIN_PASSWORD;
   const secret = process.env.SESSION_SECRET;
-
-  if (!validEmail || !validPassword || !secret) {
-    console.error('Missing required environment variables: ADMIN_EMAIL, ADMIN_PASSWORD, SESSION_SECRET');
+  if (!secret) {
+    console.error('Missing SESSION_SECRET environment variable');
     return res.status(500).json({ success: false, error: 'Server configuration error.' });
   }
 
-  if (email === validEmail && password === validPassword) {
+  // Support multiple users via USERS env var (JSON array)
+  // Format: [{"email":"a@b.com","password":"pass1"},{"email":"c@d.com","password":"pass2"}]
+  // Falls back to legacy ADMIN_EMAIL / ADMIN_PASSWORD if USERS is not set
+  let users = [];
+  if (process.env.USERS) {
+    try {
+      users = JSON.parse(process.env.USERS);
+    } catch {
+      console.error('USERS env var is not valid JSON');
+      return res.status(500).json({ success: false, error: 'Server configuration error.' });
+    }
+  } else if (process.env.ADMIN_EMAIL && process.env.ADMIN_PASSWORD) {
+    users = [{ email: process.env.ADMIN_EMAIL, password: process.env.ADMIN_PASSWORD }];
+  }
+
+  const match = users.find(u => u.email === email && u.password === password);
+
+  if (match) {
     const token = crypto
       .createHmac('sha256', secret)
       .update(`${email}:authenticated`)
