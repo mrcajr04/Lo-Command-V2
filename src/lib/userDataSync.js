@@ -5,7 +5,17 @@ async function getUserId() {
   return session?.user?.id ?? null;
 }
 
-export async function syncFromCloud(keys) {
+export const SYNC_KEYS = [
+  'lo_command_contacts',
+  'lo_command_workspace_links',
+  'lo_command_workspace_link_categories',
+  'lo_command_workspace_profile',
+  'lo_command_vault_preferences',
+  'lo_command_sidebar_collapsed',
+  'lo_command_vault',
+];
+
+export async function syncFromCloud() {
   const userId = await getUserId();
   if (!userId) return;
 
@@ -13,12 +23,20 @@ export async function syncFromCloud(keys) {
     .from('user_data')
     .select('key, value')
     .eq('user_id', userId)
-    .in('key', keys);
+    .in('key', SYNC_KEYS);
 
   if (error) { console.error('syncFromCloud error:', error); return; }
 
   for (const row of data) {
-    localStorage.setItem(row.key, JSON.stringify(row.value));
+    if (row.key === 'lo_command_vault') {
+      // Vault is stored as { salt, iv, data } — restore as separate localStorage keys
+      const v = row.value;
+      if (v?.salt) localStorage.setItem('lo_command_vault_salt', v.salt);
+      if (v?.iv) localStorage.setItem('lo_command_vault_iv', v.iv);
+      if (v?.data) localStorage.setItem('lo_command_vault_data', v.data);
+    } else {
+      localStorage.setItem(row.key, JSON.stringify(row.value));
+    }
   }
 }
 

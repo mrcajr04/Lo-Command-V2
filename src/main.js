@@ -157,6 +157,7 @@ function loadWorkspaceProfile() {
 
 function saveWorkspaceProfile(profile) {
   setItem(WORKSPACE_PROFILE_KEY, profile);
+  syncToCloud(WORKSPACE_PROFILE_KEY, profile);
 }
 
 function isAuthenticated() {
@@ -529,6 +530,7 @@ function activateTab(tabId) {
 function handleSidebarCollapse(nextCollapsed) {
   sidebarCollapsed = Boolean(nextCollapsed);
   setItem('lo_command_sidebar_collapsed', sidebarCollapsed);
+  syncToCloud('lo_command_sidebar_collapsed', sidebarCollapsed);
 
   // Rebuild only the sidebar — do NOT re-render the canvas. Re-rendering would
   // remount the active module (e.g. a fresh, locked vault), kicking the user out.
@@ -2220,11 +2222,7 @@ authOverlay.querySelector('#auth-signin-form')?.addEventListener('submit', async
       errorEl.classList.remove('hidden');
     } else {
       setAuthenticated(data.session.access_token);
-      await syncFromCloud([
-        'lo_command_contacts',
-        'lo_command_workspace_links',
-        'lo_command_workspace_link_categories',
-      ]);
+      await syncFromCloud();
       syncAuthOverlay();
     }
   } catch {

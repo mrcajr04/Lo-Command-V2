@@ -2,6 +2,7 @@
  * Vault Storage Wrapper
  * Stores and loads base64-encoded encrypted data and cryptographic parameters.
  */
+import { syncToCloud } from '../lib/userDataSync.js';
 
 const VAULT_PREFERENCES_KEY = 'lo_command_vault_preferences';
 const DEFAULT_VAULT_PREFERENCES = {
@@ -57,9 +58,13 @@ export function getVaultCiphertext() {
 
 // Save all vault elements securely to localStorage
 export function saveVaultData(salt, iv, ciphertext) {
-  localStorage.setItem('lo_command_vault_salt', arrayBufferToBase64(salt));
-  localStorage.setItem('lo_command_vault_iv', arrayBufferToBase64(iv));
-  localStorage.setItem('lo_command_vault_data', arrayBufferToBase64(ciphertext));
+  const saltB64 = arrayBufferToBase64(salt);
+  const ivB64 = arrayBufferToBase64(iv);
+  const dataB64 = arrayBufferToBase64(ciphertext);
+  localStorage.setItem('lo_command_vault_salt', saltB64);
+  localStorage.setItem('lo_command_vault_iv', ivB64);
+  localStorage.setItem('lo_command_vault_data', dataB64);
+  syncToCloud('lo_command_vault', { salt: saltB64, iv: ivB64, data: dataB64 });
 }
 
 // Clear vault elements completely
@@ -80,8 +85,7 @@ export function getVaultPreferences() {
 }
 
 export function saveVaultPreferences(preferences) {
-  localStorage.setItem(
-    VAULT_PREFERENCES_KEY,
-    JSON.stringify({ ...DEFAULT_VAULT_PREFERENCES, ...preferences })
-  );
+  const merged = { ...DEFAULT_VAULT_PREFERENCES, ...preferences };
+  localStorage.setItem(VAULT_PREFERENCES_KEY, JSON.stringify(merged));
+  syncToCloud(VAULT_PREFERENCES_KEY, merged);
 }
